@@ -46,7 +46,7 @@ These describe the checked-in demo snapshot, exported on 17 October 2026. Counts
 
 </details>
 
-**Explore:** [What we built](#what-we-built) · [Worked example](#one-business-from-question-to-evidence) · [Architecture](#how-it-works) · [Validation](#results-and-validation) · [Setup](#quick-start) · [Services](#models-and-external-services) · [Limits](#assumptions-and-limitations) · [Repository](#repository-layout) · [Help and contributions](#help-and-contributions)
+**Explore:** [What we built](#what-we-built) · [Worked example](#one-business-from-question-to-evidence) · [Architecture](#how-it-works) · [Validation](#results-and-validation) · [Setup](#quick-start) · [Services](#models-and-external-services) · [Limits](#assumptions-and-limitations) · [Repository](#repository-layout) · [Team](#team) · [Help and contributions](#help-and-contributions)
 
 ## What we built
 
@@ -228,6 +228,19 @@ The saved text-model runs used `meta-llama/Llama-3.3-70B-Instruct`; choose a mod
 | [`docs/GUIDE.md`](docs/GUIDE.md) | Full setup, deployment, reports, outputs, evaluation, and rehearsal instructions |
 
 Local `data/` and `outputs/` are ignored. Keep full footage, manifests, renders, traces, and `.env` out of Git; the exported snapshot and short clips under `web/public/` are intentionally checked in.
+
+## Team
+
+<p align="center">
+  <img src="docs/assets/team-photo.jpg" width="480" alt="The team working on laptops at the Real-Time Video Agents Hack in London">
+  <br>
+  <sub>Building Corner Scout at the Real-Time Video Agents Hack, London, 17 October 2026.</sub>
+</p>
+
+| Name | Contact |
+| --- | --- |
+| Igor Pejic | [igorpejicw@gmail.com](mailto:igorpejicw@gmail.com) |
+| Roman Degtiarev | [ro.degtiarev@gmail.com](mailto:ro.degtiarev@gmail.com) |
 
 ## Help and contributions
 
