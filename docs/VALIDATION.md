@@ -28,6 +28,8 @@ The saved runs in the [README results](../README.md#results-and-validation) reac
 
 Human review of captions and vision estimates, and the submission itself, remain pending; the submission recording is done. Automated checks and saved-report playback do not complete those steps.
 
+<a id="current-sf-streets-workflow"></a>
+
 ## SF Streets import and highlight editor
 
 The import below is shared with Corner Scout; the briefs, revision, and undo belong to the secondary highlight editor, which is not part of the demo. The application uses the supplied public SF Streets dataset. The live picker excludes earlier gameplay recordings, and the former YouTube downloader exits without downloading or uploading anything.
