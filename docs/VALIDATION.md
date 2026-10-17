@@ -35,4 +35,4 @@ The initial HTTP 401 came from an inaccessible `WANDB_PROJECT`, despite a valid 
 
 The connection check does not verify live ingestion/search, executed Cosmos identity, gameplay caption quality, or complete highlight latency. Provider unit tests exercise HTTP contracts and do not count as sponsor execution evidence.
 
-Configure `.env`, run `highlight-agent doctor --remote`, register the exact source, upload or attach its index, and refresh until ready. Review the six actual gameplay examples in `examples/evaluation.json`; do not treat synthetic panels as gameplay-quality evidence. Record the genuine two-/three-minute presentation only after the live flow works.
+Configure `.env`, run `highlight-agent doctor --remote`, register the exact source, upload or attach its index, and refresh until ready. Replace the placeholder video ID and intervals in `examples/evaluation.json` with six actual gameplay examples, then review them against the indexed captions; do not treat synthetic panels as gameplay-quality evidence. Record the genuine two-/three-minute presentation only after the live flow works.
