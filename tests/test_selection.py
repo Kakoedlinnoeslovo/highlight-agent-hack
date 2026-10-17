@@ -116,6 +116,60 @@ def test_selection_limits_four_events_and_ends_with_strongest():
     assert {identifier for w in windows for identifier in w.moment_ids} == {"m2", "m3", "m4", "m5"}
 
 
+def street_plan():
+    source = video(30).model_copy(update={"dataset": "sf-streets"})
+    candidates = [moment(f"m{i}", i * 5, (i + 1) * 5, score=10 - i * 0.2) for i in range(6)]
+    return create_plan(source, "Show me pedestrians and cyclists.", candidates, 30)
+
+
+def test_dense_street_captions_keep_separate_complete_contextual_windows():
+    plan = street_plan()
+    assert [window.moment_ids for window in plan.windows] == [["m4"], ["m2"], ["m0"]]
+    assert [(window.start_seconds, window.end_seconds) for window in plan.windows] == [
+        (18, 28),
+        (8, 18),
+        (0, 8),
+    ]
+    assert plan.duration == 28
+    chronological = sorted(plan.windows, key=lambda window: window.start_seconds)
+    assert all(
+        left.end_seconds <= right.start_seconds
+        for left, right in zip(chronological, chronological[1:])
+    )
+    assert all(" · " not in window.caption for window in plan.windows)
+
+
+def test_street_overlapping_padded_caption_yields_to_higher_ranked_complete_moment():
+    source = video().model_copy(update={"dataset": "sf-streets"})
+    windows = select_windows(
+        source,
+        [
+            moment("lower", 10, 15, score=7),
+            moment("higher", 14, 19, score=10),
+            moment("separate", 30, 35, score=8),
+        ],
+        30,
+    )
+    assert [window.moment_ids for window in windows] == [["separate"], ["higher"]]
+    assert [(window.start_seconds, window.end_seconds) for window in windows] == [
+        (28, 38),
+        (12, 22),
+    ]
+
+
+def test_dense_street_cut_can_remove_clip_two_and_move_highest_ranked_moment_first():
+    plan = street_plan()
+    original = plan.model_dump()
+    revised = revise_plan(plan, "Remove clip two and put the highest-ranked moment first.")
+    assert [window.moment_ids for window in revised.windows] == [["m0"], ["m4"]]
+    assert [(window.start_seconds, window.end_seconds) for window in revised.windows] == [
+        (0, 8),
+        (18, 28),
+    ]
+    assert revised.previous_edit_id == plan.id
+    assert plan.model_dump() == original
+
+
 @pytest.mark.parametrize(
     "candidate", [moment("wrong-source", 5, 6, video_id="v2"), moment("past-end", 99, 101)]
 )

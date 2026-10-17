@@ -8,6 +8,7 @@ import httpx
 import pytest
 from openai import APIConnectionError, APIStatusError
 
+from highlight_agent.briefs import STREET_PEOPLE_BRIEF, STREET_TRAFFIC_BRIEF
 from highlight_agent.config import Settings
 from highlight_agent.inference import InferenceClient, InferenceError
 from highlight_agent.models import Moment
@@ -64,6 +65,106 @@ def score(identifier="known", *, match=True, value=8):
         "score": value,
         "reason": "Upright car continues driving.",
     }
+
+
+@pytest.mark.parametrize(
+    ("brief", "query", "guidance"),
+    [
+        (STREET_PEOPLE_BRIEF, "pedestrians walking and cyclists riding", "people on foot"),
+        (STREET_TRAFFIC_BRIEF, "buses and cars crossing an intersection", "buses and motor traffic"),
+    ],
+)
+def test_street_search_briefs_use_observable_city_activity(brief, query, guidance):
+    inference, completions = client(
+        [json.dumps({"query": query, "alternate_query": "street scene with road users"})]
+    )
+
+    assert inference.expand(brief).query == query
+
+    messages = completions.calls[0]["messages"]
+    assert json.loads(messages[1]["content"]) == {"brief": brief}
+    system = messages[0]["content"]
+    assert guidance in system
+    assert "unseen behavior" in system
+    assert "clean stunt landings" not in system
+    assert "Do not infer collisions, risk, or legality" in system
+
+
+@pytest.mark.parametrize(
+    ("brief", "caption", "guidance"),
+    [
+        (
+            STREET_PEOPLE_BRIEF,
+            "Traffic crosses the intersection as several pedestrians walk and cyclists pass.",
+            "people on foot",
+        ),
+        (
+            STREET_TRAFFIC_BRIEF,
+            "A bus drives down the street alongside cars and trucks.",
+            "buses and motor traffic",
+        ),
+    ],
+)
+def test_street_rankings_allow_driving_and_preserve_caption_evidence(brief, caption, guidance):
+    entry = {**score(), "reason": "Street activity matches the requested scene."}
+    inference, completions = client([json.dumps({"scores": [entry]})])
+    original = candidate().model_copy(update={"caption": caption})
+
+    ranked = inference.rank(brief, [original])
+
+    assert len(ranked) == 1
+    assert ranked[0].caption == caption
+    assert ranked[0].start_seconds == original.start_seconds
+    assert ranked[0].evidence_type == "caption_ranked"
+    messages = completions.calls[0]["messages"]
+    payload = json.loads(messages[1]["content"])
+    assert payload == {"brief": brief, "candidates": [{"id": "known", "caption": caption}]}
+    system = messages[0]["content"]
+    assert guidance in system
+    assert "Do not reject ordinary driving or quiet scenes" in system
+    assert "Do not infer collisions, risk, or legality" in system
+    assert "do not claim fresh verification" in system
+    assert "clean stunt landings" not in system
+
+
+@pytest.mark.parametrize(
+    ("brief", "guidance"),
+    [
+        ("Make me look like a pro", "lands upright and continues driving"),
+        ("clean landings", "A landing followed by a crash does not qualify"),
+        ("Roast my driving", "visible impacts, rollovers, or failed landings"),
+    ],
+)
+def test_explicit_gameplay_briefs_retain_their_outcome_criteria(brief, guidance):
+    inference, completions = client(
+        [
+            json.dumps({"query": "requested driving outcome", "alternate_query": "driving action"}),
+            json.dumps({"scores": [score()]}),
+        ]
+    )
+
+    inference.expand(brief)
+    inference.rank(brief, [candidate()])
+
+    assert all(guidance in call["messages"][0]["content"] for call in completions.calls)
+
+
+def test_other_footage_briefs_do_not_assume_a_gameplay_source():
+    inference, completions = client(
+        [
+            json.dumps({"query": "bird taking flight", "alternate_query": "bird spreading wings"}),
+            json.dumps({"scores": [score()]}),
+        ]
+    )
+
+    inference.expand("Show a bird taking flight")
+    inference.rank("Show a bird taking flight", [candidate()])
+
+    for call in completions.calls:
+        system = call["messages"][0]["content"]
+        assert "Do not assume the footage is gameplay" in system
+        assert "lands upright and continues driving" not in system
+        assert "gameplay highlights editor" not in system
 
 
 def test_malformed_json_gets_exactly_one_repair():

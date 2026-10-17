@@ -1,0 +1,54 @@
+{
+  "video_id": "REPLACE_WITH_IMPORTED_VIDEO_ID",
+  "profile": "sf-streets",
+  "cases": [
+    {
+      "label": "people",
+      "start_seconds": 0,
+      "end_seconds": 5,
+      "caption_correct": null,
+      "observed_label": null,
+      "notes": "Illustrative interval only. Replace with source-reviewed pedestrians or cyclists."
+    },
+    {
+      "label": "people",
+      "start_seconds": 10,
+      "end_seconds": 15,
+      "caption_correct": null,
+      "observed_label": null,
+      "notes": "Illustrative interval only. Replace with a second pedestrians/cyclists scene."
+    },
+    {
+      "label": "traffic",
+      "start_seconds": 20,
+      "end_seconds": 25,
+      "caption_correct": null,
+      "observed_label": null,
+      "notes": "Illustrative interval only. Replace with source-reviewed buses or motor traffic."
+    },
+    {
+      "label": "traffic",
+      "start_seconds": 30,
+      "end_seconds": 35,
+      "caption_correct": null,
+      "observed_label": null,
+      "notes": "Illustrative interval only. Replace with a second buses/motor traffic scene."
+    },
+    {
+      "label": "ordinary",
+      "start_seconds": 40,
+      "end_seconds": 45,
+      "caption_correct": null,
+      "observed_label": null,
+      "notes": "Illustrative interval only. Replace with a source-reviewed ordinary street scene."
+    },
+    {
+      "label": "ordinary",
+      "start_seconds": 50,
+      "end_seconds": 55,
+      "caption_correct": null,
+      "observed_label": null,
+      "notes": "Illustrative interval only. Replace with a second source-reviewed ordinary scene."
+    }
+  ]
+}

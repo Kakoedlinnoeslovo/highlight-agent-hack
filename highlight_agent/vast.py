@@ -10,6 +10,8 @@ import hashlib
 import math
 import mimetypes
 import re
+import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -275,6 +277,110 @@ class VASTClient:
             )
         return _s3_uri(f"s3://{bucket}/{key}", field="original_video")
 
+    def dataset_sources(self) -> list[dict]:
+        """Browse only the supplied, public SF Streets collection; group stream chunks."""
+        streams: dict[str, list[dict]] = {}
+        seen: set[str] = set()
+        offset = 0
+        while True:
+            payload = self._json(
+                self._request("GET", "/videos/explore", params={
+                    "scope": "public", "location": "san_francisco", "indexed": "complete",
+                    "limit": 100, "offset": offset,
+                }), context="dataset listing",
+            )
+            rows = payload.get("chunks")
+            total = payload.get("total")
+            if not isinstance(rows, list) or type(total) is not int or total < 0:
+                raise ProviderError("VAST dataset listing has an unsupported response shape.")
+            if payload.get("table_available") is False:
+                raise ProviderError("The supplied dataset index is unavailable. Retry when VAST is ready.")
+            for row in rows:
+                if not isinstance(row, dict):
+                    raise ProviderError("VAST dataset listing contains a malformed row.")
+                if (row.get("is_public") is not True or row.get("location") != "san_francisco"
+                    or row.get("capture_type") != "streets"
+                    or not str(row.get("camera_id", "")).startswith("sf_streets_cam-")):
+                    continue
+                original = _s3_uri(row.get("original_video"), field="dataset source")
+                if original in seen:
+                    continue
+                seen.add(original)
+                duration = _finite_number(row.get("chunk_duration_sec"), "chunk_duration_sec")
+                index = row.get("chunk_index")
+                count = row.get("total_segments")
+                stream = row.get("stream_id")
+                if (duration <= 0 or type(index) is not int or index < 0
+                    or type(count) is not int or count <= 0 or not isinstance(stream, str) or not stream):
+                    raise ProviderError("SF Streets is missing measured duration or stream ordering metadata.")
+                streams.setdefault(stream, []).append({
+                    "original_video": original, "duration": duration, "chunk_index": index,
+                    "segment_count": count, "camera_id": row["camera_id"],
+                })
+            offset += len(rows)
+            if offset >= total:
+                break
+            if not rows or offset > 10000:
+                raise ProviderError("VAST dataset pagination did not complete. Retry dataset browsing.")
+        sources = []
+        for stream, chunks in streams.items():
+            chunks.sort(key=lambda item: item["chunk_index"])
+            contiguous = [chunks[0]]
+            for chunk in chunks[1:]:
+                if len(contiguous) >= 6 or chunk["chunk_index"] != contiguous[-1]["chunk_index"] + 1:
+                    break
+                contiguous.append(chunk)
+            duration = sum(chunk["duration"] for chunk in contiguous)
+            camera = chunks[0]["camera_id"]
+            sources.append({
+                "original_video": chunks[0]["original_video"], "stream_id": stream,
+                "label": f"SF Streets · {camera} · {duration:.0f}s",
+                "duration": duration, "segment_count": sum(c["segment_count"] for c in contiguous),
+                "chunks": contiguous,
+            })
+        return sorted(sources, key=lambda item: item["label"])
+
+    def download_dataset_source(self, original: str, destination: Path) -> Path:
+        """Stream an exact S3 object via the authenticated backend, without retaining its URL."""
+        original = _s3_uri(original, field="dataset source")
+        destination = Path(destination)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if not self._token:
+            self._login()
+        for attempt in range(2):
+            headers = {"Authorization": f"Bearer {self._token}"}
+            if self.settings.vast_host_header:
+                headers["Host"] = self.settings.vast_host_header
+            try:
+                with self.client.stream(
+                    "GET", self.api_base + "/videos/stream", headers=headers,
+                    params={"source": original, "token": self._token}, timeout=self.timeout,
+                ) as response:
+                    if (response.status_code == 401 and attempt == 0
+                        and self.settings.vast_username and self.settings.vast_password):
+                        self._login()
+                        continue
+                    self._check_status(response, "GET", "/videos/stream")
+                    if response.status_code != 200:
+                        raise ProviderError("VAST did not return a complete dataset video.")
+                    with tempfile.TemporaryDirectory(prefix=".download-", dir=destination.parent) as folder:
+                        temporary = Path(folder) / "source.mp4"
+                        size = 0
+                        with temporary.open("wb") as handle:
+                            for block in response.iter_bytes(1024 * 1024):
+                                size += len(block)
+                                if size > 512 * 1024 * 1024:
+                                    raise ProviderError("Dataset chunk exceeds the 512 MB download limit.")
+                                handle.write(block)
+                        expected = response.headers.get("content-length")
+                        if not size or (expected is not None and expected != str(size)):
+                            raise ProviderError("Dataset download was incomplete. Retry the import.")
+                        temporary.replace(destination)
+                    return destination
+            except httpx.HTTPError:
+                raise ProviderError("Dataset download failed. Check the VAST connection and retry.") from None
+        raise ProviderError("Dataset authentication failed. Check the VAST credentials.")
+
     @staticmethod
     def _original(video: VideoRecord) -> str:
         if not video.original_video:
@@ -284,6 +390,12 @@ class VASTClient:
         return _s3_uri(video.original_video, field="original_video")
 
     def _normalize(self, row: dict, video: VideoRecord) -> Moment:
+        original = row.get("original_video") if video.source_chunks else self._original(video)
+        chunk = next((c for c in video.source_chunks if c.original_video == original), None)
+        if video.source_chunks and chunk is None:
+            raise ProviderError("VAST returned a source outside the registered dataset excerpt.")
+        offset = chunk.start_seconds if chunk else 0
+        duration = chunk.duration if chunk else video.duration
         start = _finite_number(row.get("segment_start_sec"), "segment_start_sec")
         end_value = row.get("segment_end_sec")
         if end_value is None:
@@ -295,7 +407,7 @@ class VASTClient:
             end = start + length
         else:
             end = _finite_number(end_value, "segment_end_sec")
-        if start < 0 or end <= start or end > video.duration + 0.00001:
+        if start < 0 or end <= start or end > duration + (0.05 if chunk else 0.00001):
             raise ProviderError(
                 "VAST returned source timestamps outside the matching local recording. Confirm the exact source file and deployment schema."
             )
@@ -312,7 +424,6 @@ class VASTClient:
         source = row.get("source")
         if source is not None:
             source = _s3_uri(source, field="segment source")
-        original = self._original(video)
         identity = f"{original}|{source or row.get('segment_number', '')}|{start:.9f}|{end:.9f}"
         model = row.get("cosmos_model")
         if isinstance(model, str) and model.strip():
@@ -322,8 +433,8 @@ class VASTClient:
         return Moment(
             id="moment-" + hashlib.sha256(identity.encode()).hexdigest()[:20],
             video_id=video.id,
-            start_seconds=start,
-            end_seconds=end,
+            start_seconds=start + offset,
+            end_seconds=min(end, duration) + offset,
             caption=caption.strip(),
             score=max(0, similarity) * 10,
             reason="Retrieved from indexed visual captions; not freshly verified against video.",
@@ -331,8 +442,7 @@ class VASTClient:
             evidence_type="caption_ranked",
         )
 
-    def segments(self, video: VideoRecord) -> list[dict]:
-        original = self._original(video)
+    def _segments_for_source(self, video: VideoRecord, original: str) -> list[dict]:
         payload = self._json(
             self._request(
                 "GET",
@@ -374,8 +484,48 @@ class VASTClient:
             normalized.append(result)
         return sorted(normalized, key=lambda row: row["start_seconds"])
 
+    def segments(self, video: VideoRecord) -> list[dict]:
+        if not video.source_chunks:
+            return self._segments_for_source(video, self._original(video))
+        rows = []
+        slot_offset = 0
+        for chunk in video.source_chunks:
+            source_rows = self._segments_for_source(video, chunk.original_video)
+            totals = {row.get("total_segments") for row in source_rows}
+            if not source_rows or len(totals) != 1 or None in totals:
+                raise ProviderError("A dataset chunk has no complete segment count. Retry import later.")
+            expected = totals.pop()
+            numbers = [row.get("segment_number") for row in source_rows]
+            if None in numbers:
+                raise ProviderError("A dataset chunk is missing its source segment number.")
+            if len(numbers) != len(set(numbers)) or any(number > expected for number in numbers):
+                raise ProviderError("A dataset chunk has duplicate or out-of-range segment numbers.")
+            for row in source_rows:
+                row["source_segment_number"] = row["segment_number"]
+                row["source_total_segments"] = row.pop("total_segments")
+                row["segment_number"] += slot_offset
+            rows.extend(source_rows)
+            slot_offset += expected
+        for row in rows:
+            row["total_segments"] = slot_offset
+        return rows
+
     def search(self, video: VideoRecord, query: str, top_k: int = 16) -> list[Moment]:
-        original = self._original(video)
+        if video.source_chunks:
+            # The deployment treats list metadata filters as scalar strings. Search
+            # each exact object, then merge before the single application ranking.
+            if not self._token:
+                self._login()
+            with ThreadPoolExecutor(max_workers=3) as executor:
+                batches = list(executor.map(
+                    lambda chunk: self._search_source(video, query, top_k, chunk.original_video),
+                    video.source_chunks,
+                ))
+            return sorted((item for batch in batches for item in batch),
+                          key=lambda item: (-item.score, item.start_seconds))[:top_k]
+        return self._search_source(video, query, top_k, self._original(video))
+
+    def _search_source(self, video: VideoRecord, query: str, top_k: int, original: str) -> list[Moment]:
         if not isinstance(query, str) or not query.strip():
             raise ProviderError("Provide a nonempty visual search query.")
         if isinstance(top_k, bool) or not isinstance(top_k, int) or not 1 <= top_k <= 32:
@@ -385,7 +535,7 @@ class VASTClient:
             "top_k": top_k,
             "metadata_filters": {"original_video": original},
             "llm_top_n": 1,
-            "include_public": False,
+            "include_public": video.dataset == "sf-streets",
             "min_similarity": 0.1,
         }
         response = self._request("POST", "/tools/search", json=body, allow_status=(404, 405))

@@ -88,6 +88,9 @@ def main(argv: list[str] | None = None) -> int:
     for name in ("ingest", "refresh"):
         commands.add_parser(name).add_argument("video_id")
     commands.add_parser("list", help="List registered sources for the current mode")
+    commands.add_parser("datasets", help="Browse supplied SF Streets camera excerpts")
+    dataset = commands.add_parser("import-dataset", help="Import an exact supplied SF Streets excerpt")
+    dataset.add_argument("source_uri")
     commands.add_parser("sample", help="Create an explicitly synthetic offline sample")
     make = commands.add_parser("make", help="Search, select, and render a fresh highlight")
     make.add_argument("video_id")
@@ -131,6 +134,10 @@ def main(argv: list[str] | None = None) -> int:
             _emit(service.register_video(args.path, args.label, args.vast_source))
         elif args.command == "list":
             _emit([video.model_dump(mode="json") for video in service.list_videos()])
+        elif args.command == "datasets":
+            _emit(service.dataset_sources())
+        elif args.command == "import-dataset":
+            _emit(service.import_dataset_source(args.source_uri))
         elif args.command == "sample":
             _emit(service.register_sample())
         elif args.command == "ingest":
