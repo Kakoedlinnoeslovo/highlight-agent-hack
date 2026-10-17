@@ -1,4 +1,4 @@
-# Highlight Agent
+# Corner Scout
 
 <p align="center">
   <strong>Find your corner. See the evidence.</strong><br>
@@ -14,7 +14,7 @@
   <a href="#prove-the-result">Validation</a>
 </p>
 
-**Corner Scout** is the featured application in Highlight Agent, a toolkit for finding visual moments and rendering evidence reels. Describe a business, compare corners within one city, and inspect the footage behind the ranking. The toolkit also includes caption reports and a conversational highlight editor.
+Describe a business, compare corners within one city, and inspect the footage behind the ranking. **Corner Scout** runs on **Highlight Agent**, our engine for finding visual moments in video and rendering the evidence. The engine also powers caption reports and a conversational highlight editor.
 
 Built for **Real-Time Video Agents Hack**, London · **17 October 2026**.
 
