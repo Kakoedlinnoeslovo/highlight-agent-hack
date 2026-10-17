@@ -2,7 +2,7 @@
 
 Real-Time Video Agents Hack · London · 17 October 2026
 
-The current jury walkthrough is the [business-location example in the README](README.md#a-60-second-jury-walkthrough). This build plan also retains the conversational editor's implementation milestones and presentation checks.
+The current jury walkthrough is [Corner Scout in the README](README.md#a-2-minute-walkthrough), with the [demo plan](docs/DEMO_PLAN.md) for the full script. This build plan also retains the conversational editor's implementation milestones and presentation checks.
 
 ## Requirements and success criteria
 

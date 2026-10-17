@@ -1,6 +1,6 @@
 # Demo script — same streets, different stories
 
-This optional conversational-editor walkthrough complements the [current business-report jury example](../README.md#a-60-second-jury-walkthrough).
+This optional conversational-editor walkthrough complements the [Corner Scout walkthrough](../README.md#a-2-minute-walkthrough) that leads the demo.
 
 Use the same genuine rehearsal for both cuts. Measure actual scene intervals before rendering; the examples contain illustrative windows. First round: **two minutes**. Top-five final: **three minutes at 6 PM BST**. Submission closes **4:30 PM BST on 17 October 2026**.
 
