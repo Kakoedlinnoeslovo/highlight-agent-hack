@@ -427,7 +427,7 @@ def excerpt(video, count=2):
     )
 
 
-def test_dataset_browse_paginates_public_sf_collection_and_groups_six_contiguous_chunks():
+def test_dataset_browse_paginates_every_public_collection_and_retains_all_chunks():
     # The early page is intentionally unsorted, duplicated, and mixed with
     # recordings that match some, but not all, SF Streets collection fields.
     pages = {
@@ -439,9 +439,9 @@ def test_dataset_browse_paginates_public_sf_collection_and_groups_six_contiguous
             dataset_row(5),
             dataset_row(6),
             dataset_row(7, is_public=False),
-            dataset_row(8, location="new_york"),
-            dataset_row(9, capture_type="traffic_simulation"),
-            dataset_row(10, camera_id="unrelated-camera"),
+            dataset_row(8, location="new_york", stream_id="ny-session"),
+            dataset_row(9, capture_type="traffic_simulation", stream_id="sim-session"),
+            dataset_row(10, camera_id="unrelated-camera", stream_id="other-session"),
         ],
     }
     offsets = []
@@ -453,7 +453,6 @@ def test_dataset_browse_paginates_public_sf_collection_and_groups_six_contiguous
         offset = int(params.pop("offset"))
         assert params == {
             "scope": "public",
-            "location": "san_francisco",
             "indexed": "complete",
             "limit": "100",
         }
@@ -462,16 +461,17 @@ def test_dataset_browse_paginates_public_sf_collection_and_groups_six_contiguous
 
     sources = client(handler).dataset_sources()
     assert offsets == [0, 3]
-    assert len(sources) == 1
-    source = sources[0]
+    assert len(sources) == 4
+    source = next(item for item in sources if item["stream_id"] == "sf5-session")
     assert source["original_video"] == dataset_row()["original_video"]
-    assert source["duration"] == 180
-    assert source["segment_count"] == 18
-    assert [row["chunk_index"] for row in source["chunks"]] == list(range(6))
-    assert "SF Streets" in source["label"]
+    assert source["duration"] == 210
+    assert source["segment_count"] == 21
+    assert [row["chunk_index"] for row in source["chunks"]] == list(range(7))
+    assert source["location"] == "san_francisco"
+    assert "San Francisco" in source["label"]
 
 
-def test_dataset_browse_stops_at_a_capture_gap_and_keeps_other_streams_separate():
+def test_dataset_browse_splits_capture_gaps_and_keeps_other_streams_separate():
     rows = [
         dataset_row(4),
         dataset_row(6),
@@ -480,8 +480,8 @@ def test_dataset_browse_stops_at_a_capture_gap_and_keeps_other_streams_separate(
     sources = client(
         lambda request: httpx.Response(200, json={"chunks": rows, "total": 3})
     ).dataset_sources()
-    assert len(sources) == 2
-    assert sorted(source["duration"] for source in sources) == [30, 30]
+    assert len(sources) == 3
+    assert sorted(source["duration"] for source in sources) == [30, 30, 30]
     assert all(len(source["chunks"]) == 1 for source in sources)
 
 

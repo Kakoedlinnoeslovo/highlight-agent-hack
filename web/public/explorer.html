@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#465fff">
+  <meta name="description" content="Search captions and inspect the source recordings across the full hackathon video collection.">
+  <title>Corner Scout — Explore all footage</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/explorer.css">
+  <script type="module" src="/explorer-view.js"></script>
+</head>
+<body>
+  <a href="#search" class="skip-link">Skip to footage search</a>
+  <main id="cs-shell">
+    <header class="cs-masthead">
+      <a href="/" class="cs-brand"><span class="cs-logo" aria-hidden="true">⌖</span>Corner Scout</a>
+      <nav class="cs-navigation" aria-label="Demo"><a href="/">Find my corner</a><a href="/explorer.html" aria-current="page">Explore all footage</a></nav>
+    </header>
+    <section class="cs-hero"><h1>Explore all footage.</h1><p>Search supplied captions, choose a recording, and watch the exact moment in context.</p></section>
+    <section id="coverage" class="cs-card ex-coverage" aria-label="Dataset coverage" aria-busy="true"><p>Loading collection coverage…</p></section>
+    <form id="explorer-filters" class="cs-card ex-filters" role="search">
+      <label class="ex-search" for="search">Search captions<input type="search" id="search" name="q" placeholder="e.g. cyclist intersection" autocomplete="off"><span>Matches every word, in any order.</span></label>
+      <label for="location">Location<select id="location" name="location"><option value="">All locations</option></select></label>
+      <label for="scene">Scene<select id="scene" name="scene"><option value="">All scenes</option></select></label>
+      <label for="recording">Recording<select id="recording" name="recording"><option value="">All recordings</option></select></label>
+      <button type="reset" class="ex-reset">Clear filters</button>
+    </form>
+    <div id="explorer-status" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+    <div class="ex-layout">
+      <section class="ex-matches" aria-labelledby="matches-heading"><div class="ex-results-heading"><h2 id="matches-heading">Caption intervals</h2><p id="match-count">Loading…</p></div><div id="explorer-results" aria-busy="true"></div><nav id="pagination" class="ex-pagination" aria-label="Result pages"></nav></section>
+      <section id="explorer-player" class="cs-card ex-player" aria-labelledby="player-title">
+        <span class="cs-eyebrow cs-blue">Source recording</span><h2 id="player-title">Choose a caption interval</h2>
+        <video id="recording-video" controls playsinline preload="none" hidden></video><p id="playback-status" role="status">Select a result to load its footage.</p><p id="selected-caption" class="ex-caption"></p><dl id="provenance"></dl>
+      </section>
+    </div>
+    <p class="cs-muted">Captions are supplied dataset annotations. Audience scouting uses eligible fixed street cameras; every collection remains available here.</p>
+    <noscript><p class="cs-card">Enable JavaScript to search captions and play footage.</p></noscript>
+  </main>
+</body>
+</html>

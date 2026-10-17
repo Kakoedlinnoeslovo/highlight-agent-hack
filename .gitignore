@@ -28,6 +28,7 @@ outputs/
 *.avi
 *.webm
 !web/public/media/*.mp4
+!docs/assets/*.mp4
 *.pt
 *.onnx
 
@@ -43,6 +44,9 @@ wandb/
 .gstack/
 .vercel/
 node_modules/
+# Full local playback uses generated media outside the deployment directory.
+web/public/catalog.local.json
+web/public/corners.local.json
 
 # Local workshop photos include access details.
 presentation/

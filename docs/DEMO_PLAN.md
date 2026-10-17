@@ -1,5 +1,80 @@
 # Demo plan — Corner Scout
 
+## Full collection walkthrough
+
+Lead with the current **Find my corner** and **Explore all footage** workflows. The collection baseline is **55 recordings, 612 chunks, and 3,537 supplied caption segments**, about 4 hours 55 minutes across seven collections. Before presenting the whole collection as playable, confirm the explorer's actual coverage totals. Incomplete preparation remains visible as pending media.
+
+Current scouting preparation is complete: **937/937 eligible indexed segments have valid vision observations**, with zero failures, covering **78.05 analyzed minutes**. All eight candidate recordings were reviewed at their first, middle, and last views. SF cameras **1 and 2 move** and remain explorer-only; six recordings qualify for audience comparisons:
+
+| City | Eligible recordings | Valid observations | Analyzed footage |
+| --- | --- | ---: | ---: |
+| San Francisco | Cameras 3, 4, and 5 | 397: 37 + 180 + 180 | 33.05 min |
+| New York | Camera 1 · recording 1, Camera 1 · recording 2, Camera 2 | 540: 180 each | 45 min |
+
+The two NYC camera-1 streams retain separate recording identities. Comparisons stay within the selected city. Scores use audience presence weighted by valid segment duration, including SF camera 3's shortened final segment. A recommendation requires **three core-audience observations, 180 analyzed seconds, and 90% valid duration coverage**.
+
+The completed vision pass took **18 minutes 6 seconds elapsed**, including **12 minutes 20 seconds of active processing** while imports arrived. The local artifact `outputs/full-example-rankings.json` records source hashes, weights, scores, evidence intervals, coverage, and matching Python/browser results for all 12 city/example combinations. Camera-motion review is complete; human caption and audience-label accuracy review remains pending.
+
+### Current measured examples
+
+Use these examples for the full-recording walkthrough. Each count is a positive sampled-frame count at the leading recording, not a count of unique customers. These are saved real-profile results; a fresh request can choose different helpful weights.
+
+| Example | San Francisco | New York |
+| --- | --- | --- |
+| **Dog grooming salon** | **Camera 5**, 100/100 · dogs **10/180** | **No recommendation** · best has dogs **2/180** |
+| **Luxury watch boutique** | **Camera 5**, 84/100 · premium cars **86/180** | **Camera 2**, 96/100 · premium cars **49/180** |
+| **Student coffee shop** | **Camera 5**, 89/100 · young adults **33/180** | **Camera 1 · recording 2**, 87/100 · young adults **28/180** |
+| **Kids' toy store** | **Camera 5**, 89/100 · families **8/180** | **Camera 1 · recording 2**, 87/100 · families **13/180** |
+| **Bike repair shop** | **Camera 5**, 100/100 · cyclists **48/180** | **Camera 1 · recording 2**, 94/100 · cyclists **67/180** |
+| **Souvenir shop** | **No recommendation** · no tourist samples | **Camera 2**, 75/100 · tourists **3/180** |
+
+**Use NYC dog grooming or SF souvenirs for the abstention beat.** The expanded SF kids' toy example now recommends camera 5; the earlier sparse result belongs to the historical video.
+
+### What to click
+
+1. Open **Explore all footage**. Show actual coverage and the seven collection filters. Choose **Warehouse**, search **forklift**, play a result, and inspect its original source and exact interval.
+2. Choose **New York**, search **intersection cyclist**, and show that every query word must occur in the supplied caption. Clear filters to search the complete supplied collection. Caption search makes no new inference calls.
+3. Return to **Find my corner**, select **San Francisco**, and click **Dog grooming salon**. Show dogs in **10/180** samples at camera 5 and inspect the actual supporting frame and video interval.
+4. Select **New York** and click **Luxury watch boutique**. Camera 2 leads with premium cars in **49/180** samples. Explain that camera 1's two recordings remain separate and scores compare only this city.
+5. Run **Dog grooming salon** in New York: the best recording has **2/180** dog samples, so there is no recommendation. Alternatively, run **Souvenir shop** in San Francisco: zero tourist samples.
+6. Point at analyzed duration and coverage. All footage remains caption-searchable; audience rankings use the six reviewed fixed-view recordings. SF cameras 1/2, moving routes, highways, and indoor operations stay in the explorer.
+
+### Two-minute live script
+
+| Time | Screen | Say |
+| --- | --- | --- |
+| 0:00–0:15 | Explorer coverage and collection filters | “The supplied collection spans seven settings. Here is the actual playable coverage; every result keeps its supplied caption and source interval.” |
+| 0:15–0:40 | Find my corner · San Francisco · **Dog grooming salon** | “For scouting, we compare reviewed street recordings within one city. Camera 5 shows dogs in ten of 180 samples. Here is a supporting moment.” |
+| 0:40–1:00 | New York · **Luxury watch boutique** | “Switch cities: camera 2 shows premium cars in 49 samples. These are model estimates, and you can inspect each source.” |
+| 1:00–1:20 | New York · **Dog grooming salon** | “The strongest dog signal is only two samples. Three are required, alongside three analyzed minutes and 90% coverage, so it refuses to recommend.” |
+| 1:20–1:45 | Explorer · Warehouse · **forklift** · source playback | “The warehouse is useful too: search its supplied captions and play the exact interval. It stays in the explorer rather than a street-audience ranking.” |
+| 1:45–2:00 | Scouting duration/coverage and evidence | “VAST and Cosmos supply the indexed collection; W&B models estimate audiences and business weights. Code scores the evidence. This helps choose where to investigate next.” |
+
+Use measured waits when recording; if switching to a saved run, label it and disclose shortened waits. The hosted app seeks within prepared full-recording previews. The local Gradio app can render evidence reels and expose a Weave trace when available; hosted searches do not create Weave traces.
+
+### Current setup and checks
+
+```sh
+npm --prefix web run dev
+# http://localhost:3000 and http://localhost:3000/explorer.html
+
+uv run python scripts/corner_scout.py --city 'San Francisco'
+uv run python scripts/corner_scout.py --business 'Dog grooming salon' --city 'New York'
+```
+
+- Follow the [README preparation workflow](../README.md#prepare-footage) when rebuilding data. Keep `data/catalog/scouting-review.json` with the source-bound review decisions and `data/vision/` with the fingerprinted caches.
+- Before claiming complete collection playback, verify all expected recordings, chunks, and captions are accounted for in the explorer and [validation report](VALIDATION.md#full-collection-expansion).
+- Warm the exact examples above and inspect their evidence. Recompute saved rankings after changing source footage, model prompts, or scoring code. Do not present motion review as an accuracy audit of the audience labels.
+- Describe filename-derived dates as **source timestamps, timezone not supplied**. They are not established capture times and do not affect ranking.
+- Keep keys, `.env`, local paths, personal tabs, and provider setup screens out of the presentation. Counts can repeat the same people or vehicles; footage varies by time and duration and does not establish revenue or commercial demand.
+
+The existing **82-second video stays unchanged** and is labeled as the original 15-minute SF sample in the README. Its old five-second public clip bundle is pruned by full-recording exports; the original local sources, vision caches, and saved edits remain available.
+
+<details>
+<summary><strong>Historical 15-minute SF sample: original script, results, and preparation notes</strong></summary>
+
+The notes below describe the earlier five-camera, three-minutes-per-camera sample. Their winners, timings, and pending checklist items are historical; the current full-recording results and script are above. The published 82-second recording documents that original sample.
+
 Final plan · Real-Time Video Agents Hack · London · 17 October 2026
 Submission closes **4:30 PM BST** (target **4:15 PM**). Target recording deadline: **3:45 PM**. First round: **2 minutes**. Top-five final: **3 minutes at 6 PM**.
 
@@ -129,3 +204,5 @@ Never say: foot-traffic numbers, revenue, "guaranteed best location", or anythin
 | Corner Scout app | `uv run python scripts/corner_scout.py` | http://127.0.0.1:7861, reels in `outputs/corner-scout/` |
 | One business, no UI | `uv run python scripts/corner_scout.py --business "Dog grooming salon"` | JSON ranking + reels |
 | City report (finale) | `uv run python scripts/city_report.py` | `outputs/city-report/<run>/index.html` |
+
+</details>

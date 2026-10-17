@@ -98,6 +98,7 @@ class VASTClient:
         self.raw_models: set[str] = set()
         self._models_by_source: dict[str, set[str]] = {}
         self.deployment_model: str | None = None
+        self.dataset_inventory: list[dict] = []
 
     def models_for_source(self, original_video: str) -> set[str]:
         """Return observed caption model IDs for this exact source, as a copy."""
@@ -278,14 +279,15 @@ class VASTClient:
         return _s3_uri(f"s3://{bucket}/{key}", field="original_video")
 
     def dataset_sources(self) -> list[dict]:
-        """Browse only the supplied, public SF Streets collection; group stream chunks."""
+        """Browse every supplied public recording, retaining independent contiguous runs."""
         streams: dict[str, list[dict]] = {}
         seen: set[str] = set()
+        raw_chunks = []
         offset = 0
         while True:
             payload = self._json(
                 self._request("GET", "/videos/explore", params={
-                    "scope": "public", "location": "san_francisco", "indexed": "complete",
+                    "scope": "public", "indexed": "complete",
                     "limit": 100, "offset": offset,
                 }), context="dataset listing",
             )
@@ -298,24 +300,29 @@ class VASTClient:
             for row in rows:
                 if not isinstance(row, dict):
                     raise ProviderError("VAST dataset listing contains a malformed row.")
-                if (row.get("is_public") is not True or row.get("location") != "san_francisco"
-                    or row.get("capture_type") != "streets"
-                    or not str(row.get("camera_id", "")).startswith("sf_streets_cam-")):
+                if row.get("is_public") is not True:
                     continue
                 original = _s3_uri(row.get("original_video"), field="dataset source")
                 if original in seen:
                     continue
                 seen.add(original)
+                raw_chunks.append(row)
                 duration = _finite_number(row.get("chunk_duration_sec"), "chunk_duration_sec")
                 index = row.get("chunk_index")
                 count = row.get("total_segments")
                 stream = row.get("stream_id")
                 if (duration <= 0 or type(index) is not int or index < 0
                     or type(count) is not int or count <= 0 or not isinstance(stream, str) or not stream):
-                    raise ProviderError("SF Streets is missing measured duration or stream ordering metadata.")
+                    raise ProviderError("The public dataset is missing measured duration or stream ordering metadata.")
+                metadata = {}
+                for field in ("camera_id", "location", "capture_type"):
+                    value = row.get(field)
+                    if not isinstance(value, str) or not value.strip():
+                        raise ProviderError(f"The public dataset is missing {field} metadata.")
+                    metadata[field] = value
                 streams.setdefault(stream, []).append({
                     "original_video": original, "duration": duration, "chunk_index": index,
-                    "segment_count": count, "camera_id": row["camera_id"],
+                    "segment_count": count, **metadata,
                 })
             offset += len(rows)
             if offset >= total:
@@ -325,20 +332,31 @@ class VASTClient:
         sources = []
         for stream, chunks in streams.items():
             chunks.sort(key=lambda item: item["chunk_index"])
-            contiguous = [chunks[0]]
+            runs = [[chunks[0]]]
             for chunk in chunks[1:]:
-                if len(contiguous) >= 6 or chunk["chunk_index"] != contiguous[-1]["chunk_index"] + 1:
-                    break
-                contiguous.append(chunk)
-            duration = sum(chunk["duration"] for chunk in contiguous)
-            camera = chunks[0]["camera_id"]
-            sources.append({
-                "original_video": chunks[0]["original_video"], "stream_id": stream,
-                "label": f"SF Streets · {camera} · {duration:.0f}s",
-                "duration": duration, "segment_count": sum(c["segment_count"] for c in contiguous),
-                "chunks": contiguous,
-            })
-        return sorted(sources, key=lambda item: item["label"])
+                if chunk["chunk_index"] == runs[-1][-1]["chunk_index"]:
+                    raise ProviderError("The public dataset has conflicting objects for a stream chunk.")
+                if chunk["chunk_index"] != runs[-1][-1]["chunk_index"] + 1:
+                    runs.append([])
+                runs[-1].append(chunk)
+            for contiguous in runs:
+                duration = sum(chunk["duration"] for chunk in contiguous)
+                first = contiguous[0]
+                metadata = {key: first[key] for key in ("camera_id", "location", "capture_type")}
+                if any(any(chunk[key] != value for key, value in metadata.items())
+                       for chunk in contiguous):
+                    raise ProviderError("The public dataset has inconsistent recording metadata.")
+                location = metadata["location"].replace("_", " ").title()
+                camera = metadata["camera_id"]
+                sources.append({
+                    "original_video": first["original_video"], "stream_id": stream, **metadata,
+                    "label": f"{location} · {camera} · {stream[:8]} · {duration:.0f}s",
+                    "duration": duration,
+                    "segment_count": sum(c["segment_count"] for c in contiguous),
+                    "chunks": contiguous,
+                })
+        self.dataset_inventory = raw_chunks
+        return sorted(sources, key=lambda item: (item["label"], item["original_video"]))
 
     def download_dataset_source(self, original: str, destination: Path) -> Path:
         """Stream an exact S3 object via the authenticated backend, without retaining its URL."""
@@ -489,8 +507,13 @@ class VASTClient:
             return self._segments_for_source(video, self._original(video))
         rows = []
         slot_offset = 0
-        for chunk in video.source_chunks:
-            source_rows = self._segments_for_source(video, chunk.original_video)
+        if not self._token:
+            self._login()
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            batches = list(executor.map(
+                lambda chunk: self._segments_for_source(video, chunk.original_video), video.source_chunks,
+            ))
+        for source_rows in batches:
             totals = {row.get("total_segments") for row in source_rows}
             if not source_rows or len(totals) != 1 or None in totals:
                 raise ProviderError("A dataset chunk has no complete segment count. Retry import later.")
@@ -535,7 +558,7 @@ class VASTClient:
             "top_k": top_k,
             "metadata_filters": {"original_video": original},
             "llm_top_n": 1,
-            "include_public": video.dataset == "sf-streets",
+            "include_public": video.dataset in {"sf-streets", "hackathon-public"},
             "min_similarity": 0.1,
         }
         response = self._request("POST", "/tools/search", json=body, allow_status=(404, 405))

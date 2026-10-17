@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import math
 import re
 import shutil
 import subprocess
 import tempfile
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -178,83 +182,126 @@ class HighlightService:
 
     def dataset_sources(self) -> list[dict]:
         if self.config.mode != "live":
-            raise ServiceError("The supplied SF Streets dataset requires live mode.")
+            raise ServiceError("The supplied public dataset requires live mode.")
         return self._vast_client().dataset_sources()
 
-    def import_dataset_source(self, original_video: str) -> VideoRecord:
-        """Build a local excerpt from supplied objects and reuse their existing index."""
-        source = next((item for item in self.dataset_sources()
-                       if item["original_video"] == original_video), None)
+    @staticmethod
+    def dataset_import_signature(source: dict) -> str:
+        """An immutable identity for one ordered, indexed source membership."""
+        membership = {
+            key: source.get(key) for key in ("stream_id", "camera_id", "location", "capture_type")
+        }
+        membership["chunks"] = [
+            {key: chunk.get(key) for key in
+             ("original_video", "duration", "chunk_index", "segment_count")}
+            for chunk in source["chunks"]
+        ]
+        return hashlib.sha256(json.dumps(membership, sort_keys=True).encode()).hexdigest()
+
+    def _prepare_dataset_chunk(self, chunk: dict, video_id: str,
+                               previous: SourceChunk | None = None) -> tuple[Path, SourceChunk]:
+        """Keep verified download and normalization checkpoints across interrupted imports."""
+        uri = chunk["original_video"]
+        cache = self.config.data_dir / "catalog" / "chunks" / hashlib.sha256(uri.encode()).hexdigest()
+        cache.mkdir(parents=True, exist_ok=True)
+        raw = cache / "source.mp4"
+        metadata_path = cache / "source.json"
+        metadata = read_json(metadata_path) if metadata_path.exists() else {}
+        valid = (raw.is_file() and metadata.get("original_video") == uri
+                 and _sha256(raw) == metadata.get("source_sha256"))
+        if not valid:
+            self._vast_client().download_dataset_source(uri, raw)
+            fingerprint = _sha256(raw)
+            expected_hash = previous.source_sha256 if previous else metadata.get("source_sha256")
+            if expected_hash and fingerprint != expected_hash:
+                raise ServiceError("The supplied dataset object changed. Restore the matching media before retrying.")
+            info = probe_media(raw)
+            metadata = {"original_video": uri, "source_sha256": fingerprint,
+                        "source_duration": info.duration}
+            write_json(metadata_path, metadata)
+        if previous and previous.source_sha256 and metadata["source_sha256"] != previous.source_sha256:
+            raise ServiceError("The supplied dataset object changed. Restore the matching media before retrying.")
+        source_duration = metadata["source_duration"]
+        if chunk["duration"] > source_duration + 0.1:
+            raise ServiceError(
+                f"Dataset media duration does not match indexed coverage: source measures "
+                f"{source_duration:.3f}s; its index requires {chunk['duration']:.3f}s."
+            )
+        included = min(source_duration, chunk["duration"])
+        normalization = hashlib.sha256(
+            f"{metadata['source_sha256']}|{included:.9f}|720p30-v1".encode()
+        ).hexdigest()
+        normalized = cache / f"{normalization}.mp4"
+        normalized_metadata = cache / f"{normalization}.json"
+        checkpoint = read_json(normalized_metadata) if normalized_metadata.exists() else {}
+        if not (normalized.is_file() and _sha256(normalized) == checkpoint.get("sha256")):
+            with tempfile.TemporaryDirectory(prefix=".normalize-", dir=cache) as folder:
+                plan = EditPlan(
+                    id="dataset-chunk", video_id=video_id, source_path=raw,
+                    source_duration=source_duration, prompt="Prepare the supplied indexed recording.",
+                    windows=[EditWindow(moment_ids=["chunk"], start_seconds=0, end_seconds=included)],
+                    max_duration=max(30, included),
+                )
+                staged = render_edit_plan(plan, Path(folder))
+                measured = probe_media(staged).duration
+                checkpoint = {"sha256": _sha256(staged), "duration": measured,
+                              "source_sha256": metadata["source_sha256"]}
+                staged.replace(normalized)
+                write_json(normalized_metadata, checkpoint)
+        measured = checkpoint["duration"]
+        if abs(measured - included) > 0.08:
+            raise ServiceError("The normalized dataset timing does not match indexed coverage.")
+        if previous and abs(measured - previous.duration) > 0.001:
+            raise ServiceError("The rebuilt dataset timing does not match the registered recording.")
+        return normalized, SourceChunk(
+            original_video=uri, start_seconds=0, duration=measured,
+            source_duration=source_duration, source_sha256=metadata["source_sha256"],
+            chunk_index=chunk.get("chunk_index"), segment_count=chunk.get("segment_count"),
+        )
+
+    def import_dataset_source(self, original_video: str, source: dict | None = None) -> VideoRecord:
+        """Import an immutable full recording using supplied captions and resumable media caches."""
+        if self.config.mode != "live":
+            raise ServiceError("The supplied public dataset requires live mode.")
         if source is None:
-            raise ServiceError("Choose a video from the supplied SF Streets dataset.")
-        cached = None
-        for video in self.list_videos():
-            if video.dataset == "sf-streets" and video.original_video == original_video:
-                try:
-                    self._verify_source(video)
-                except ServiceError:
-                    cached = video
-                    if video.source_chunks:
-                        # Recover the registered excerpt, even if the listing has
-                        # since acquired more chunks or changed indexed coverage.
-                        source = {**source, "label": video.label, "chunks": [
-                            {"original_video": chunk.original_video, "duration": chunk.duration}
-                            for chunk in video.source_chunks
-                        ]}
-                    break
-                else:
-                    return self.refresh_index(video.id)
+            source = next((item for item in self.dataset_sources()
+                           if item["original_video"] == original_video), None)
+        if source is None or source.get("original_video") != original_video or not source.get("chunks"):
+            raise ServiceError("Choose a recording from the supplied public dataset.")
+        signature = self.dataset_import_signature(source)
+        cached = next((video for video in self.list_videos()
+                       if video.dataset == "hackathon-public" and video.import_signature == signature), None)
+        if cached:
+            try:
+                self._verify_source(cached)
+                rows = self.indexed_segments(cached.id)
+                if self._with_index_status(cached, rows).index_status == "ready":
+                    return cached
+            except ServiceError:
+                pass
         media_dir = self.config.data_dir / "media"
         media_dir.mkdir(parents=True, exist_ok=True)
-        video_id = cached.id if cached else uuid4().hex
+        video_id = cached.id if cached else "public-" + signature[:32]
         destination = cached.local_path if cached else media_dir / f"{video_id}.mp4"
-        previous_chunks = {chunk.original_video: chunk for chunk in cached.source_chunks} if cached else {}
+        previous = {chunk.original_video: chunk for chunk in cached.source_chunks} if cached else {}
+        # The shared httpx client is thread-safe. Authenticate before worker requests.
+        provider = self._vast_client()
+        if hasattr(provider, "_login") and not provider._token:
+            provider._login()
+        def prepare(chunk):
+            return self._prepare_dataset_chunk(chunk, video_id, previous.get(chunk["original_video"]))
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            prepared = list(executor.map(prepare, source["chunks"]))
         chunks = []
         offset = 0.0
-        provider = self._vast_client()
-        with tempfile.TemporaryDirectory(prefix=".sf-streets-", dir=media_dir) as folder:
-            paths = []
-            for index, chunk in enumerate(source["chunks"]):
-                path = Path(folder) / f"chunk-{index}.mp4"
-                provider.download_dataset_source(chunk["original_video"], path)
-                fingerprint = _sha256(path)
-                previous = previous_chunks.get(chunk["original_video"])
-                if previous and previous.source_sha256 and fingerprint != previous.source_sha256:
-                    raise ServiceError("The supplied dataset object changed. Restore the matching media before retrying.")
-                info = probe_media(path)
-                # The browse duration is indexed coverage, not full media length.
-                # Exclude uncaptioned encoder tails and keep [0, indexed end].
-                if chunk["duration"] > info.duration + 0.1:
-                    raise ServiceError(
-                        f"Dataset media duration does not match indexed coverage: chunk {index + 1} "
-                        f"measures {info.duration:.3f}s; its index requires {chunk['duration']:.3f}s."
-                    )
-                included_duration = min(info.duration, chunk["duration"])
-                plan = EditPlan(
-                    id=f"dataset-{index}", video_id=video_id, source_path=path,
-                    source_duration=info.duration, prompt="Prepare the supplied indexed excerpt.",
-                    windows=[EditWindow(moment_ids=[f"chunk-{index}"], start_seconds=0,
-                                        end_seconds=included_duration)],
-                    max_duration=max(30, included_duration),
-                )
-                normalized = render_edit_plan(plan, Path(folder) / f"normalized-{index}")
-                measured_duration = probe_media(normalized).duration
-                if previous and abs(measured_duration - previous.duration) > 0.001:
-                    raise ServiceError("The rebuilt dataset timing does not match the registered excerpt.")
-                chunks.append(SourceChunk(
-                    original_video=chunk["original_video"], start_seconds=offset,
-                    duration=measured_duration, source_duration=info.duration,
-                    source_sha256=fingerprint,
-                ))
-                offset += measured_duration
-                # Use generated flat names for the concat demuxer's safe mode.
-                normalized_path = Path(folder) / f"prepared-{index}.mp4"
-                normalized.replace(normalized_path)
-                paths.append(normalized_path)
-            # The concat manifest contains only generated local filenames. Source
-            # offsets come from measured media, never capture filename clocks.
+        with tempfile.TemporaryDirectory(prefix=".public-import-", dir=media_dir) as folder:
+            for index, (path, chunk) in enumerate(prepared):
+                chunks.append(chunk.model_copy(update={"start_seconds": offset}))
+                offset += chunk.duration
+                # Hard links retain generated safe names without duplicating media bytes.
+                (Path(folder) / f"prepared-{index}.mp4").hardlink_to(path)
             manifest = Path(folder) / "concat.txt"
-            manifest.write_text("".join(f"file '{path.name}'\n" for path in paths))
+            manifest.write_text("".join(f"file 'prepared-{index}.mp4'\n" for index in range(len(chunks))))
             assembled = Path(folder) / "assembled.mp4"
             try:
                 subprocess.run([
@@ -263,23 +310,160 @@ class HighlightService:
                     "-c", "copy", "-movflags", "+faststart", str(assembled),
                 ], check=True, capture_output=True, timeout=180)
             except (OSError, subprocess.SubprocessError):
-                raise ServiceError("Could not assemble the dataset excerpt. Check FFmpeg and retry.") from None
-            info = probe_media(assembled)
-            if abs(info.duration - offset) > 0.1:
+                raise ServiceError("Could not assemble the dataset recording. Check FFmpeg and retry.") from None
+            if abs(probe_media(assembled).duration - offset) > 0.1:
                 raise ServiceError("Assembled dataset timestamps do not match its source chunks.")
             video = VideoRecord(
                 id=video_id, label=source["label"], local_path=destination, duration=offset,
-                original_video=original_video, index_status="indexing", dataset="sf-streets",
+                original_video=original_video, index_status="indexing", dataset="hackathon-public",
                 source_chunks=chunks, content_sha256=_sha256(assembled), mode="live",
+                import_signature=signature,
+                **{key: source.get(key) for key in ("stream_id", "camera_id", "location", "capture_type")},
             )
-            # Validate the original chunk captions before exposing the recording.
             rows = provider.segments(video)
             video = self._with_index_status(video, rows)
             if video.index_status != "ready":
-                raise ServiceError("The dataset excerpt is not completely indexed. Retry the import later.")
+                raise ServiceError("The dataset recording is not completely indexed. Retry the import later.")
+            expected = source.get("segment_count")
+            if expected is not None and len(rows) != expected:
+                raise ServiceError("The dataset recording caption count does not match its inventory.")
             assembled.replace(destination)
         write_json(self._index_path(video.id), rows)
-        return self._save_video(video)
+        saved = self._save_video(video)
+        # The complete recording and caption index are durable now. Original
+        # downloads remain recoverable; redundant prepared chunks can be rebuilt.
+        for normalized, _ in prepared:
+            normalized.unlink(missing_ok=True)
+            normalized.with_suffix(".json").unlink(missing_ok=True)
+        return saved
+
+    def release_dataset_originals(self, video: VideoRecord) -> dict:
+        """Release verified raw cache copies once the indexed recording is durable.
+
+        VAST retains the originals. Local hash metadata remains an integrity
+        anchor for any future download; incomplete imports never reach here.
+        """
+        if video.dataset != "hackathon-public" or not video.source_chunks:
+            raise ServiceError("Only complete supplied recordings can release cached originals.")
+        persisted = self.get_video(video.id)
+        if persisted != video:
+            raise ServiceError("Persist the complete recording before releasing its originals.")
+        self._verify_source(video)
+        rows = self.indexed_segments(video.id)
+        try:
+            intervals = [(float(row["start_seconds"]), float(row["end_seconds"])) for row in rows]
+        except (KeyError, TypeError, ValueError):
+            raise ServiceError("Verify the caption intervals before releasing original downloads.") from None
+        if any(not (math.isfinite(start) and math.isfinite(end)
+                    and 0 <= start < end <= video.duration + 0.05) for start, end in intervals):
+            raise ServiceError("Verify the caption intervals before releasing original downloads.")
+        if video.index_status != "ready" or self._with_index_status(video, rows).index_status != "ready":
+            raise ServiceError("Complete the caption index before releasing original downloads.")
+        verified = []
+        for chunk in video.source_chunks:
+            cache = (self.config.data_dir / "catalog" / "chunks"
+                     / hashlib.sha256(chunk.original_video.encode()).hexdigest())
+            raw, metadata_path = cache / "source.mp4", cache / "source.json"
+            if not raw.exists():
+                continue
+            if not metadata_path.is_file() or not chunk.source_sha256:
+                raise ServiceError("Original cache integrity metadata is missing; no originals were released.")
+            metadata = read_json(metadata_path)
+            if (not isinstance(metadata, dict) or metadata.get("original_video") != chunk.original_video
+                    or metadata.get("source_sha256") != chunk.source_sha256):
+                raise ServiceError("Original cache integrity verification failed; no originals were released.")
+            try:
+                fingerprint, size = _sha256(raw), raw.stat().st_size
+            except FileNotFoundError:
+                # Another verified release may have removed this same raw copy.
+                continue
+            if fingerprint != chunk.source_sha256:
+                raise ServiceError("Original cache integrity verification failed; no originals were released.")
+            verified.append((raw, size))
+        for raw, _ in verified:
+            raw.unlink(missing_ok=True)
+        return {"video_id": video.id, "released_chunks": len(verified),
+                "released_bytes": sum(size for _, size in verified)}
+
+    def import_datasets(self, progress: Callable[[str], None] | None = None,
+                        *, keep_originals: bool = False) -> dict:
+        """Discover once, checkpoint coverage after each recording, and retry unfinished imports."""
+        from .media import MediaError
+        from .vast import ProviderError
+
+        sources = self.dataset_sources()
+        catalog_dir = self.config.data_dir / "catalog"
+        inventory = {"dataset": "hackathon-public", "sources": sources, "recordings": sources,
+                     "chunks": getattr(self._vast_client(), "dataset_inventory", []),
+                     "captured_at": datetime.now(UTC).isoformat(),
+                     "baseline": {"chunks": 612, "recordings": 55, "segments": 3537}}
+        originals = [chunk["original_video"] for source in sources for chunk in source["chunks"]]
+        if len(originals) != len(set(originals)):
+            raise ServiceError("A supplied chunk appears in more than one recording.")
+        def totals(recordings):
+            return {"recordings": len(recordings),
+                    "chunks": sum(len(item["chunks"]) for item in recordings),
+                    "segments": sum(item.get("segment_count", 0) for item in recordings),
+                    "duration_seconds": sum(sum(chunk["duration"] for chunk in item["chunks"])
+                                            for item in recordings)}
+        expected = totals(sources)
+        baseline_path = self.config.output_dir / "validation" / "public-dataset-inventory.json"
+        baseline_chunks = read_json(baseline_path).get("chunks", []) if baseline_path.exists() else []
+        discovered_originals = set(originals)
+        missing = [chunk for chunk in baseline_chunks if chunk["original_video"] not in discovered_originals]
+        expected["chunks"] += len(missing)
+        expected["segments"] += sum(chunk["total_segments"] for chunk in missing)
+        expected["duration_seconds"] += sum(chunk["chunk_duration_sec"] for chunk in missing)
+        discovered_streams = {source.get("stream_id") for source in sources}
+        expected["recordings"] += len({chunk["stream_id"] for chunk in missing} - discovered_streams)
+        inventory["missing_sources"] = [chunk["original_video"] for chunk in missing]
+        inventory["expected"] = expected
+        write_json(catalog_dir / "inventory.json", inventory)
+        imported = []
+        playable = []
+        failures = [{"stream_id": chunk.get("stream_id"),
+                     "original_video": chunk["original_video"],
+                     "error": "The saved public source is missing from the current indexed collection."}
+                    for chunk in missing]
+        report = {}
+        def save():
+            nonlocal report
+            measured = totals(imported)
+            measured["duration_seconds"] = sum(video.duration for _, video in completed)
+            playback = totals(playable)
+            playback["duration_seconds"] = measured["duration_seconds"]
+            report = {"dataset": "hackathon-public", "expected": expected,
+                      "imported": measured, "playable": playback,
+                      "complete": bool(sources) and len(imported) == len(sources) and not failures,
+                      "missing_sources": inventory["missing_sources"],
+                      "original_storage": "local" if keep_originals else "VAST",
+                      "released_originals": dict(released),
+                      "failures": failures,
+                      "baseline": inventory["baseline"],
+                      "baseline_matches": all(expected[key] == value
+                                              for key, value in inventory["baseline"].items()),
+                      "video_ids": [video.id for _, video in completed]}
+            write_json(catalog_dir / "coverage.json", report)
+        completed = []
+        released = {"chunks": 0, "bytes": 0}
+        save()
+        for index, source in enumerate(sources):
+            if progress:
+                progress(f"Importing {index + 1}/{len(sources)}: {source['label']}")
+            try:
+                video = self.import_dataset_source(source["original_video"], source=source)
+                imported.append(source)
+                playable.append(source)
+                completed.append((source, video))
+                if not keep_originals:
+                    cleanup = self.release_dataset_originals(video)
+                    released["chunks"] += cleanup["released_chunks"]
+                    released["bytes"] += cleanup["released_bytes"]
+            except (ProviderError, ServiceError, MediaError, OSError, ValueError) as error:
+                failures.append({"stream_id": source.get("stream_id"),
+                                 "original_video": source["original_video"], "error": str(error)})
+            save()
+        return report
 
     def ingest_video(self, video_id: str) -> VideoRecord:
         video = self.get_video(video_id)
@@ -318,10 +502,16 @@ class HighlightService:
     @staticmethod
     def _with_index_status(video: VideoRecord, rows: list[dict]) -> VideoRecord:
         windows = sorted((float(row["start_seconds"]), float(row["end_seconds"])) for row in rows)
+        full_dataset = video.dataset == "hackathon-public"
+        tolerance = 0.08 if full_dataset else 0.5
+        valid_intervals = not full_dataset or all(
+            math.isfinite(start) and math.isfinite(end) and 0 <= start < end <= video.duration + 0.05
+            for start, end in windows
+        )
         coverage = 0.0
         gap = False
         for start, end in windows:
-            if start > coverage + 0.5:
+            if start > coverage + tolerance:
                 gap = True
             coverage = max(coverage, end)
         totals = {int(row["total_segments"]) for row in rows if row.get("total_segments")}
@@ -333,7 +523,11 @@ class HighlightService:
             count = max(totals)
             first = 0 if 0 in numbers else 1
             declared_complete = len(totals) == 1 and numbers == set(range(first, first + count))
-        complete = bool(rows) and declared_complete and not gap and coverage >= video.duration - 0.5
+        expected_counts = [chunk.segment_count for chunk in video.source_chunks]
+        if full_dataset and expected_counts and all(count is not None for count in expected_counts):
+            declared_complete = declared_complete and len(rows) == sum(expected_counts)
+        complete = (bool(rows) and valid_intervals and declared_complete and not gap
+                    and coverage >= video.duration - tolerance)
         reported = sorted({str(row["cosmos_model"]) for row in rows if row.get("cosmos_model")})
         video = video.model_copy(
             update={

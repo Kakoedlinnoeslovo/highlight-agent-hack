@@ -1,20 +1,26 @@
-import { rank, profileWeights, validateBusiness, hasEnoughEvidence, clock } from './scout.js';
+import { rank, profileWeights, validateBusiness, hasEnoughEvidence } from './scout.js';
+import { renderProof, wireProof } from './proof-view.js';
+import { cityName, cityCorners, availableCities } from './scout-city.js';
 
 const form = document.querySelector('#cs-query');
 const input = document.querySelector('#business');
 const go = document.querySelector('#cs-go');
 const results = document.querySelector('#results');
 const announcements = document.querySelector('#announcements');
+const citySelect = document.querySelector('#city');
+const selectedCity = () => cityName(citySelect.value);
+const scopedCorners = () => cityCorners(data?.corners, selectedCity());
+const analyzedSeconds = row => Number.isFinite(row.analyzed_seconds) ? row.analyzed_seconds : row.frames * 5;
+const coveragePercent = row => Number.isFinite(row.coverage) ? Math.round(row.coverage * 100) : 100;
+const analyzedLabel = row => `${(analyzedSeconds(row) / 60).toFixed(1)} min analyzed · ${coveragePercent(row)}% valid coverage`;
 let data;
 let pending;
 let sequence = 0;
+let activeProof;
 
 const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 const audience = key => data.audiences[key] || key;
 const weightedKeys = weights => Object.keys(weights).sort((a, b) => weights[b] - weights[a]);
-const counted = (frame, weights) => weightedKeys(weights).filter(key => frame.counts[key])
-  .map(key => `${audience(key)} ×${frame.counts[key]}`).join(' · ');
-const validClip = clip => typeof clip === 'string' && /^\/media\/[a-zA-Z0-9_.-]+\.mp4$/.test(clip);
 const validPoster = poster => typeof poster === 'string' && /^\/previews\/[a-zA-Z0-9_.-]+\.jpg$/.test(poster);
 
 function announce(message) { announcements.textContent = message; }
@@ -28,12 +34,18 @@ function clearPlayback() {
 }
 
 function replaceResults(html) {
+  activeProof?.destroy();
+  activeProof = null;
   clearPlayback();
   results.innerHTML = html;
+  const hasResults = Boolean(results.querySelector('.cs-recommendation'));
+  document.querySelector('#cs-shell').classList.toggle('cs-has-results', hasResults);
+  form.classList.remove('cs-query-expanded');
+  document.querySelector('#edit-business').setAttribute('aria-expanded', 'false');
 }
 
 function renderInitial(sample) {
-  const cards = (sample?.corners || []).slice(0, 5).map((corner, index) => {
+  const cards = cityCorners(sample?.corners, selectedCity()).slice(0, 5).map((corner, index) => {
     const preview = validPoster(corner.poster)
       ? `<img src="${escape(corner.poster)}" alt="${escape(corner.camera)}: recorded street footage">`
       : '<div class="cs-camera-placeholder" aria-hidden="true">⌖</div>';
@@ -45,8 +57,8 @@ function renderInitial(sample) {
     <h2>See who walks past.<br>Before you sign.</h2>
     <p>Describe your business above. We’ll compare the audiences on these streets and show you the clips behind your shortlist.</p>
     <div class="cs-scene-tags"><span>People</span><span>Vehicles</span><span>Animals</span></div></div>
-    <div class="cs-camera-stage"><div class="cs-stage-header"><span>SF STREETS</span><span>THE SOURCE FOOTAGE</span></div>
-    <div class="cs-stage-cards">${cards}</div><div class="cs-stage-footer"><span>Recorded footage · San Francisco</span><span aria-hidden="true">⌖</span></div></div>
+    <div class="cs-camera-stage"><div class="cs-stage-header"><span>${escape(selectedCity().toUpperCase())} STREETS</span><span>THE SOURCE FOOTAGE</span></div>
+    <div class="cs-stage-cards">${cards}</div><div class="cs-stage-footer"><span>Recorded footage · ${escape(selectedCity())}</span><span aria-hidden="true">⌖</span></div></div>
     <div class="cs-steps"><span><b>01</b> Describe your business</span><span><b>02</b> Compare the audiences</span><span><b>03</b> Watch the evidence</span></div></section>`;
 }
 
@@ -55,7 +67,7 @@ function renderLoading(corners) {
   const nodes = corners.slice(0, 5).map((corner, index) => `<span class="cs-scan-node" style="--order:${index}" title="${escape(corner.camera)}">${String(index + 1).padStart(2, '0')}</span>`).join('');
   return `<section class="cs-scan-stage" role="status" aria-live="polite">
     <div class="cs-scan-orbit" aria-hidden="true"><svg class="cs-beam-lines" viewBox="0 0 600 160" preserveAspectRatio="none">${paths}</svg>${nodes}<span class="cs-scan-core">⌖</span></div>
-    <div class="cs-scan-copy"><h3>Finding your business in the street.</h3><p>Matching audiences across your corners and preparing the evidence.</p></div></section>`;
+    <div class="cs-scan-copy"><h3>Finding your audience.</h3><p>Generating your business profile and comparing recorded frame observations.</p></div></section>`;
 }
 
 function showError(error, loadingData = false) {
@@ -66,18 +78,19 @@ function showError(error, loadingData = false) {
   document.querySelector('#retry-data')?.addEventListener('click', loadData);
 }
 
-function reset() {
+function reset(options = {}) {
   sequence += 1;
   pending?.abort();
   pending = null;
-  input.value = '';
+  if (!options.keepBusiness) input.value = '';
   input.setCustomValidity('');
   go.textContent = 'Find my corner';
-  go.disabled = !data;
+  go.disabled = !data || !scopedCorners().length;
   results.setAttribute('aria-busy', 'false');
   replaceResults(renderInitial(data));
-  announce('Search reset. Describe another business.');
-  input.focus();
+  updateBadges();
+  announce(`Search reset. Comparing ${scopedCorners().length} recordings in ${selectedCity()}.`);
+  if (!options.keepBusiness) input.focus();
 }
 
 function renderRecommendation(business, profile, weights, ranking, seconds) {
@@ -87,22 +100,22 @@ function renderRecommendation(business, profile, weights, ranking, seconds) {
   const title = enough ? `Best corner: ${tied.join(' and ')}` : 'Not enough evidence to recommend a corner';
   const chips = weightedKeys(weights).map((key, index) => `<span class="cs-chip ${weights[key] >= data.coreThreshold ? 'cs-core' : ''}" style="--order:${index}" title="${escape(profile.weights.find(item => item.key === key)?.why)}">${escape(audience(key))} · ${weights[key] >= data.coreThreshold ? 'core' : 'helpful'}</span>`).join('');
   const coreCounts = weightedKeys(weights).filter(key => weights[key] >= data.coreThreshold)
-    .map(key => `${audience(key)} in ${top.seen[key] || 0}/${top.frames} frames`).join(' · ');
+    .map(key => `<button type="button" class="cs-count-link" data-count-audience="${escape(key)}">${escape(audience(key))} detected in ${top.seen[key] || 0} of ${top.frames} sampled frames <span aria-hidden="true">↗</span></button>`).join('');
   return `<section class="cs-card cs-recommendation"><div class="cs-recommendation-main">
     <span class="cs-eyebrow ${enough ? 'cs-blue' : 'cs-warn'}">${enough ? 'Your shortlist' : 'More footage needed'}</span>
     <h2 id="result-title" tabindex="-1" ${enough ? '' : 'class="cs-warn"'}>${escape(title)}</h2>
-    ${enough ? '' : `<p class="cs-muted">The best corner shows your core customers in only ${top.core_frames} of ${top.frames} sampled frames. At least ${data.minFrames} core-audience frames are needed.</p>`}
+    ${enough ? '' : `<p class="cs-muted">The top recording shows your core customers in ${top.core_frames} of ${top.frames} sampled frames. A recommendation needs at least ${data.minFrames} core-audience observations, three analyzed minutes, and 90% valid coverage.</p>`}
     <p class="cs-customers"><b>${escape(business)}</b> · ${escape(profile.customers)}</p><div class="cs-chips">${chips}</div>
-    <p class="cs-counts">${escape(coreCounts)}</p></div>
+    <div class="cs-counts">${coreCounts}</div><p class="cs-muted cs-coverage">${escape(selectedCity())} · ${escape(analyzedLabel(top))}</p></div>
     <div class="cs-result-meta"><div class="cs-match"><span>Relative match</span><b>${Math.round(top.score * 100)}<small>/100</small></b></div>
       <span class="cs-time">${seconds.toFixed(1)}s <span>this search</span></span>
       <details class="cs-reasons"><summary>Why these audiences?</summary><ul>${profile.weights.map(item => `<li><b>${escape(audience(item.key))}:</b> ${escape(item.why)}</li>`).join('')}</ul>
-      <p class="cs-profile-model">${escape(profile.model ? `Profile: ${profile.model}` : 'Generated business profile')}<br>Ranked from cached observations</p></details>
+      <p class="cs-profile-model">${escape(profile.model ? `Profile: ${profile.model}` : 'Generated business profile')}<br>Ranked from cached observations</p>
     </div></section>`;
 }
 
 function renderRanking(ranking, weights) {
-  return `<section class="cs-card cs-ranking" aria-labelledby="ranking-title"><div class="cs-section-heading"><h3 id="ranking-title">Every corner, ranked</h3><span>${ranking.length} corners</span></div>
+  return `<section class="cs-card cs-ranking" aria-labelledby="ranking-title"><div class="cs-section-heading"><h3 id="ranking-title">Every recording, ranked</h3><span>${ranking.length} recordings</span></div>
     <p class="cs-muted cs-score-key">Relative match · score out of 100</p>
     ${ranking.map((row, index) => {
       const mix = Object.entries(row.seen).filter(([key, count]) => count && Object.hasOwn(data.audiences, key))
@@ -110,65 +123,23 @@ function renderRanking(ranking, weights) {
       const wanted = weightedKeys(weights).map(key => `${audience(key)} in ${row.seen[key] || 0}/${row.frames}`).join(', ');
       return `<div class="cs-ranking-row" style="--order:${index}"><div class="cs-ranking-line"><span class="cs-rank">${String(index + 1).padStart(2, '0')}</span><b>${escape(row.corner.camera)}</b><span class="cs-score">${Math.round(row.score * 100)}<small>/100</small></span></div>
         <div class="cs-track" aria-hidden="true"><div class="cs-fill" style="width:${row.score * 100}%"></div></div>
-        <p class="cs-frame-count">Core audience in <b>${row.core_frames} of ${row.frames} sampled frames</b></p>
-        <details><summary>Audience &amp; location details</summary><p>${escape(row.corner.headline)}<br>Recorded ${escape(row.corner.recorded)}</p>
+        <p class="cs-frame-count">Core audience in <b>${row.core_frames} of ${row.frames} valid sampled frames</b> · ${escape(analyzedLabel(row))}${row.sufficient === false ? ' · More footage needed' : ''}</p>
+        <details><summary>Audience &amp; recording details</summary><p>${escape(row.corner.headline)}<br>Source timestamp: ${escape(row.corner.recorded)} · timezone not supplied</p>
         <p>Your audience: ${escape(wanted)} frames</p><p>Corner mix: ${escape(mix || 'No observed audiences')}</p></details></div>`;
     }).join('')}
-    <p class="cs-score-note">Scores compare audience signals across these corners, not customer probabilities. Each audience’s share of sampled frames is normalized to the strongest corner. Core audiences decide the match; helpful audiences contribute up to 25%.</p>
+    <p class="cs-score-note">Scores compare audience signals across these recordings, not customer probabilities. Each audience’s presence per valid analyzed second is normalized to the strongest recording. Core audiences decide the match; helpful audiences contribute up to 25%.</p>
   </section>`;
-}
-
-function renderEvidence(row, index, weights, enough) {
-  const clips = row.best.filter(item => validClip(item.frame.clip));
-  return `<section class="cs-card cs-evidence" id="${index ? 'cs-runnerup' : 'cs-primary'}" aria-labelledby="evidence-title-${index}">
-    <h3 id="evidence-title-${index}">${enough ? (index ? 'Runner-up evidence' : 'Primary evidence') : 'Limited evidence'} · ${escape(row.corner.camera)}</h3>
-    ${clips.length ? `<video id="evidence-video-${index}" controls preload="metadata" playsinline aria-label="Recorded evidence at ${escape(row.corner.camera)}">Your browser does not support video playback.</video>
-      <div class="cs-playlist"><button type="button" data-previous="${index}" aria-label="Previous evidence clip at ${escape(row.corner.camera)}">← Previous</button>
-        <span class="cs-clip-position" id="clip-position-${index}" aria-live="polite"></span>
-        <button type="button" data-next="${index}" aria-label="Next evidence clip at ${escape(row.corner.camera)}">Next →</button></div>
-      <p class="cs-clip-caption" id="clip-caption-${index}"></p><p class="cs-video-status" id="video-status-${index}" role="status"></p>`
-      : '<div class="cs-no-evidence">No clip strong enough. Try another business or collect more footage.</div>'}
-    ${clips.length ? `<details class="cs-source-notes"><summary>Inspect ${clips.length} evidence clip${clips.length === 1 ? '' : 's'} &amp; source timestamps</summary><ol>
-      ${clips.map(({ frame }) => `<li><div class="cs-clip-heading"><b>${clock(frame.start)}–${clock(frame.end)}</b><span>${escape(counted(frame, weights))}</span></div>
-        <p>${escape(frame.notable)}</p><code>${escape(frame.source)}</code></li>`).join('')}</ol></details>` : ''}
-    </section>`;
-}
-
-function wireEvidence(row, index, weights) {
-  const clips = row.best.filter(item => validClip(item.frame.clip));
-  if (!clips.length) return;
-  const video = document.querySelector(`#evidence-video-${index}`);
-  const previous = document.querySelector(`[data-previous="${index}"]`);
-  const next = document.querySelector(`[data-next="${index}"]`);
-  const status = document.querySelector(`#video-status-${index}`);
-  let position = 0;
-  function showClip(nextPosition, play = false) {
-    position = nextPosition;
-    const frame = clips[position].frame;
-    video.src = frame.clip;
-    video.load();
-    previous.disabled = position === 0;
-    next.disabled = position === clips.length - 1;
-    document.querySelector(`#clip-position-${index}`).textContent = `Clip ${position + 1} of ${clips.length} · ${clock(frame.start)}–${clock(frame.end)}`;
-    document.querySelector(`#clip-caption-${index}`).textContent = [counted(frame, weights), frame.notable].filter(Boolean).join(' · ');
-    status.textContent = '';
-    if (play) video.play().catch(() => { status.textContent = 'Press play to watch this clip.'; });
-  }
-  previous.addEventListener('click', () => showClip(position - 1, !video.paused));
-  next.addEventListener('click', () => showClip(position + 1, !video.paused));
-  video.addEventListener('ended', () => {
-    if (position < clips.length - 1) showClip(position + 1, true);
-  });
-  video.addEventListener('error', () => { status.textContent = 'This evidence clip could not be loaded. Try the next clip or retry the search.'; });
-  video.addEventListener('play', () => {
-    results.querySelectorAll('video').forEach(other => { if (other !== video) other.pause(); });
-  });
-  showClip(0);
 }
 
 async function submit(event) {
   event?.preventDefault();
   if (!data) return;
+  const city = selectedCity();
+  const corners = scopedCorners();
+  if (!corners.length) {
+    replaceResults(`<section class="cs-card cs-empty"><h2>No scouting observations in ${escape(city)} yet</h2><p>Explore the supplied recordings while this city is analyzed.</p><a href="/explorer.html">Explore all footage</a></section>`);
+    return;
+  }
   let business;
   try { business = validateBusiness(input.value); }
   catch (error) {
@@ -184,7 +155,7 @@ async function submit(event) {
   go.disabled = true;
   go.textContent = 'Scouting…';
   results.setAttribute('aria-busy', 'true');
-  replaceResults(renderLoading(data.corners));
+  replaceResults(renderLoading(corners));
   announce(`Scouting corners for ${business}.`);
   const started = performance.now();
   const timeout = setTimeout(() => controller.abort('timeout'), 90000);
@@ -197,16 +168,16 @@ async function submit(event) {
     catch { throw new Error('The profile service returned an unreadable response. Please try again.'); }
     if (!response.ok) throw new Error(typeof profile.error === 'string' ? profile.error : 'The profile service is unavailable. Please try again.');
     const weights = profileWeights(profile, data.audiences, data.coreThreshold);
-    const ranking = rank(data.corners, weights, data);
+    const ranking = rank(corners, weights, { ...data, city });
     if (!ranking.length) throw new Error('No corners are available in this scouting sample.');
     if (current !== sequence) return;
     const enough = hasEnoughEvidence(ranking, data.minFrames);
-    const evidenceRows = ranking.slice(0, enough ? 2 : 1);
     replaceResults(renderRecommendation(business, profile, weights, ranking, (performance.now() - started) / 1000)
-      + `<div id="cs-dashboard">${renderEvidence(evidenceRows[0], 0, weights, enough)}${renderRanking(ranking, weights)}${evidenceRows[1] ? renderEvidence(evidenceRows[1], 1, weights, enough) : ''}</div>`);
-    evidenceRows.forEach((row, index) => wireEvidence(row, index, weights));
+      + `<div id="cs-dashboard">${renderProof()}${renderRanking(ranking, weights)}</div>`);
+    activeProof = wireProof(ranking, weights, data);
+    results.querySelectorAll('[data-count-audience]').forEach(button => button.addEventListener('click', () => activeProof.selectAudience(button.dataset.countAudience)));
     document.querySelector('#result-title')?.focus({ preventScroll: true });
-    announce(enough ? `Shortlist ready. Best corner: ${ranking[0].corner.camera}. ${ranking.length} corners compared.` : 'Search complete. Not enough evidence to recommend a corner.');
+    announce(enough ? `Shortlist ready. Best corner: ${ranking[0].corner.camera}. ${ranking.length} recordings compared.` : 'Search complete. Not enough evidence to recommend a corner.');
   } catch (error) {
     if (current !== sequence) return;
     showError(controller.signal.aborted ? new Error('The audience profile took too long. Please try again.') : error);
@@ -231,8 +202,9 @@ async function loadData() {
     const sample = await response.json();
     if (!sample.audiences || !Array.isArray(sample.corners) || !sample.corners.length) throw new Error('This scouting sample has no available corners.');
     data = sample;
-    const frameCount = data.corners.reduce((total, corner) => total + corner.frames.length, 0);
-    document.querySelector('#data-badges').innerHTML = `<span>${data.corners.length} SF corners</span><span>${frameCount} sampled frames</span><span>Recorded sample</span>`;
+    citySelect.replaceChildren(...availableCities(data.corners).map(city => new Option(city, city)));
+    citySelect.value = 'San Francisco';
+    updateBadges();
     const examples = document.querySelector('#cs-examples');
     examples.replaceChildren();
     for (const business of data.examples || []) {
@@ -247,13 +219,25 @@ async function loadData() {
       });
       examples.append(button);
     }
-    go.disabled = false;
+    go.disabled = !scopedCorners().length;
     replaceResults(renderInitial(data));
-    announce(`${data.corners.length} recorded corners ready. Describe your business to compare them.`);
+    announce(`${scopedCorners().length} recordings in ${selectedCity()} ready. Describe your business to compare them.`);
   } catch (error) { showError(error, true); announce('The scouting sample could not be loaded.'); }
 }
 
+function updateBadges() {
+  const corners = scopedCorners();
+  const frameCount = corners.reduce((total, corner) => total + (corner.frames || []).length, 0);
+  document.querySelector('#data-badges').innerHTML = `<span>${corners.length} ${escape(selectedCity())} recordings</span><span>${frameCount.toLocaleString()} sampled frames</span><span>Recorded footage</span>`;
+}
+
+citySelect.addEventListener('change', () => reset({ keepBusiness: true }));
 form.addEventListener('submit', submit);
+function expandQuery() {
+  form.classList.add('cs-query-expanded');
+  document.querySelector('#edit-business').setAttribute('aria-expanded', 'true');
+}
+document.querySelector('#edit-business').addEventListener('click', expandQuery);
 input.addEventListener('input', () => input.setCustomValidity(''));
 document.querySelector('#reset').addEventListener('click', reset);
 loadData();

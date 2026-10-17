@@ -10,11 +10,118 @@ import random
 import shutil
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from highlight_agent.models import Moment, VideoRecord
 from highlight_agent.service import ServiceError
+
+
+def full_export_fixture(exporter, monkeypatch, tmp_path):
+    item = corner(tmp_path)
+    item["video"] = item["video"].model_copy(update={"dataset": "hackathon-public"})
+    item.update(city="New York", location="New York", expected_seconds=10,
+                analyzed_seconds=5, coverage=0.5, eligible=True)
+    service = SimpleNamespace(config=SimpleNamespace(output_dir=tmp_path / "out"))
+    from highlight_agent.service import HighlightService
+    def factory():
+        return service
+    factory._verify_source = HighlightService._verify_source
+    monkeypatch.setattr(exporter, "HighlightService", factory)
+    monkeypatch.setattr(exporter.scout, "load_corners", lambda _: [item])
+    monkeypatch.setattr(exporter.scout, "corner_previews", lambda *_: [])
+    monkeypatch.setattr(exporter.scout.city, "_source_ref", lambda *_: "chunk.mp4 @ 0–5 s")
+    monkeypatch.setattr(exporter, "export_clip", lambda *_: pytest.fail("Full recordings must not emit segment clips"))
+    monkeypatch.setattr(exporter, "export_image", lambda _source, _time, target: target.write_bytes(b"sampled JPEG"))
+    web = tmp_path / "web"
+    public = web / "public"
+    public.mkdir(parents=True)
+    remote = "https://example.public.blob.vercel-storage.com/recordings/full.mp4"
+    local = "/recordings/" + "a" * 64 + ".mp4"
+    for name, url in (("catalog.json", remote), ("catalog.local.json", local)):
+        (public / name).write_text(json.dumps({"recordings": [
+            {"id": item["video"].id, "media": {"url": url}},
+        ]}))
+    return web, remote, local
+
+
+def test_full_scout_export_uses_one_recording_and_blob_images_with_offline_references(
+    exporter, monkeypatch, tmp_path,
+):
+    web, remote, local = full_export_fixture(exporter, monkeypatch, tmp_path)
+    jobs = []
+    class Publisher:
+        def __init__(self, _):
+            pass
+        def publish(self, files):
+            jobs.extend(files.values())
+            return {key: f"https://example.public.blob.vercel-storage.com/frames/{key}.jpg"
+                    for key in files}
+    monkeypatch.setattr(exporter, "BlobPublisher", Publisher)
+    payload = exporter.export_site(web, upload=True)
+    frame = payload["corners"][0]["frames"][0]
+    assert frame["mediaUrl"] == remote and frame["clip"] == remote + "#t=0.0,5.0"
+    assert frame["image"].startswith("https://example.public.blob.vercel-storage.com/frames/")
+    assert len(jobs) == 1 and jobs[0].suffix == ".jpg"
+    assert "imageKey" not in frame
+    offline = json.loads((web / "public/corners.local.json").read_text())
+    offline_frame = offline["corners"][0]["frames"][0]
+    assert offline_frame["mediaUrl"] == local
+    assert offline_frame["image"].startswith("/recording-images/")
+    assert offline["corners"][0]["coverage"] == 0.5
+    assert str(tmp_path) not in (web / "public/corners.json").read_text()
+
+
+def test_failed_full_scout_image_upload_preserves_previous_hosted_snapshot(
+    exporter, monkeypatch, tmp_path,
+):
+    web, _, _ = full_export_fixture(exporter, monkeypatch, tmp_path)
+    hosted = web / "public/corners.json"
+    hosted.write_text('{"previous": true}\n')
+    before = hosted.read_bytes()
+    class Publisher:
+        def __init__(self, _):
+            pass
+        def publish(self, _):
+            raise RuntimeError("interrupted image upload")
+    monkeypatch.setattr(exporter, "BlobPublisher", Publisher)
+    with pytest.raises(RuntimeError, match="interrupted image upload"):
+        exporter.export_site(web, upload=True)
+    assert hosted.read_bytes() == before
+    assert (web / "public/corners.local.json").is_file()
+
+
+def test_reviewed_crop_survives_repeated_full_exports_only_for_identical_images(
+    exporter, monkeypatch, tmp_path,
+):
+    web, _, _ = full_export_fixture(exporter, monkeypatch, tmp_path)
+    public = web / "public"
+    legacy = public / "media" / ("deadbeef-" + "0" * 20 + ".jpg")
+    legacy.parent.mkdir()
+    legacy.write_bytes(b"sampled JPEG")
+    focus = {"dog": {"x": 0.2, "y": 0.4, "width": 0.2, "height": 0.3}}
+    (public / "corners.json").write_text(json.dumps({"corners": [{"frames": [
+        {"image": f"/media/{legacy.name}", "focus": focus},
+    ]}]}))
+
+    class Publisher:
+        def __init__(self, _):
+            pass
+
+        def publish(self, files):
+            return {key: f"https://example.public.blob.vercel-storage.com/frames/{key}.jpg"
+                    for key in files}
+
+    monkeypatch.setattr(exporter, "BlobPublisher", Publisher)
+    for _ in range(2):
+        frame = exporter.export_site(web, upload=True)["corners"][0]["frames"][0]
+        assert frame["focus"] == focus
+        assert frame["image_sha256"] == hashlib.sha256(b"sampled JPEG").hexdigest()
+    monkeypatch.setattr(exporter, "export_image",
+                        lambda _source, _time, target: target.write_bytes(b"different JPEG"))
+    frame = exporter.export_site(web, upload=True)["corners"][0]["frames"][0]
+    assert "focus" not in frame
 
 
 @pytest.fixture
@@ -23,6 +130,10 @@ def exporter(monkeypatch):
     module = importlib.import_module("export_vercel")
     # Source-preview generation has separate tests; exporter fixtures are not real MP4 files.
     monkeypatch.setattr(module.scout, "corner_previews", lambda *_: [])
+    monkeypatch.setattr(
+        module, "sample_frame",
+        lambda *_: "data:image/jpeg;base64," + base64.b64encode(b"sample JPEG").decode(),
+    )
     return module
 
 
@@ -62,8 +173,19 @@ def test_export_publishes_matching_clips_and_removes_only_stale_managed_media(
     media.mkdir(parents=True)
     stale = media / ("deadbeef-" + "0" * 20 + ".mp4")
     stale.write_bytes(b"stale")
+    stale_image = stale.with_suffix(".jpg")
+    stale_image.write_bytes(b"stale image")
     unrelated = media / "user-video.mp4"
     unrelated.write_bytes(b"keep")
+    unrelated_image = media / "user-image.jpg"
+    unrelated_image.write_bytes(b"keep image")
+    image_calls = []
+
+    def sample(source, seconds):
+        image_calls.append((source, seconds))
+        return "data:image/jpeg;base64," + base64.b64encode(b"exact sampled JPEG").decode()
+
+    monkeypatch.setattr(exporter, "sample_frame", sample)
     payload = exporter.export_site(site)
     serialized = (site / "public" / "corners.json").read_text()
     assert str(tmp_path) not in serialized
@@ -72,8 +194,17 @@ def test_export_publishes_matching_clips_and_removes_only_stale_managed_media(
     clip = payload["corners"][0]["frames"][0]["clip"]
     assert (site / "public" / clip.lstrip("/")).read_bytes() == b"encoded clip"
     assert calls == [(item["video"].local_path, 0, 5)]
+    frame = payload["corners"][0]["frames"][0]
+    assert frame["sampledAt"] == 2.5
+    assert image_calls == [(item["video"].local_path, 2.5)]
+    assert (site / "public" / frame["image"].lstrip("/")).read_bytes() == b"exact sampled JPEG"
     assert not stale.exists()
+    assert not stale_image.exists()
     assert unrelated.exists()
+    assert unrelated_image.exists()
+    again = exporter.export_site(site)
+    assert again["corners"][0]["frames"][0]["image"] == frame["image"]
+    assert len(image_calls) == 1  # Stable image identity allows verified cache reuse.
     assert json.loads((site / "lib" / "profile-config.json").read_text())["named"]
     assert payload["corners"][0]["poster"] == ""
     assert (site / "public" / "scout_motion.css").read_bytes() == (
@@ -153,12 +284,137 @@ def test_export_requires_a_segment_reference(exporter, monkeypatch, tmp_path):
         exporter.export_site(tmp_path / "web")
 
 
-def test_export_rejects_observations_for_changed_windows(exporter, monkeypatch, tmp_path):
+@pytest.mark.parametrize("field", ["start_seconds", "end_seconds", "seconds"])
+def test_export_rejects_observations_for_changed_windows(exporter, monkeypatch, tmp_path, field):
     item = corner(tmp_path)
-    item["frames"][0]["start_seconds"] = 1
+    item["frames"][0][field] += 1
     monkeypatch.setattr(exporter.scout, "load_corners", lambda _: [item])
     with pytest.raises(ValueError, match="observations changed"):
         exporter.export_site(tmp_path / "web")
+
+
+def test_export_includes_every_valid_sample_including_negative_frames(
+    exporter, monkeypatch, tmp_path,
+):
+    item = corner(tmp_path)
+    item["video"].duration = 25
+    item["frames"], item["moments"] = [], {}
+    for index in range(5):
+        moment = Moment(
+            id=f"sample-{index}", video_id=item["video"].id,
+            start_seconds=index * 5, end_seconds=(index + 1) * 5, caption="Street",
+        )
+        item["moments"][moment.id] = moment
+        item["frames"].append({
+            "segment_id": moment.id, "start_seconds": moment.start_seconds,
+            "end_seconds": moment.end_seconds,
+            "seconds": (moment.start_seconds + moment.end_seconds) / 2,
+            "counts": {"dog": 0 if index == 1 else 1}, "notable": "Street",
+        })
+    monkeypatch.setattr(exporter.scout, "load_corners", lambda _: [item])
+    monkeypatch.setattr(exporter, "export_clip", lambda *args: args[-1].write_bytes(b"clip"))
+
+    site = tmp_path / "web"
+    frames = exporter.export_site(site)["corners"][0]["frames"]
+
+    assert [frame["segment_id"] for frame in frames] == list(item["moments"])
+    assert [frame["sampledAt"] for frame in frames] == [2.5, 7.5, 12.5, 17.5, 22.5]
+    assert len({frame["image"] for frame in frames}) == 5
+    assert all((site / "public" / frame["image"].lstrip("/")).is_file() for frame in frames)
+    assert frames[1]["counts"]["dog"] == 0
+
+
+@pytest.mark.parametrize("mismatch", [None, "source", "segment", "timestamp"])
+def test_reviewed_crop_requires_matching_source_segment_and_sample(
+    exporter, monkeypatch, tmp_path, mismatch,
+):
+    item = corner(tmp_path)
+    key = [item["video"].content_sha256, "one", 2.5]
+    if mismatch == "source":
+        key[0] = "0" * 64
+    elif mismatch == "segment":
+        key[1] = "different-segment"
+    elif mismatch == "timestamp":
+        key[2] = 7.5
+    focus = {"dog": {"x": 0.125, "y": 0.5, "width": 0.5, "height": 0.5}}
+    monkeypatch.setattr(exporter, "REVIEWED_FOCUS", {tuple(key): focus})
+    monkeypatch.setattr(exporter.scout, "load_corners", lambda _: [item])
+    monkeypatch.setattr(exporter, "export_clip", lambda *args: args[-1].write_bytes(b"clip"))
+
+    frame = exporter.export_site(tmp_path / "web")["corners"][0]["frames"][0]
+
+    assert frame.get("focus") == (focus if mismatch is None else None)
+    assert frame["image"]  # A presentation crop never replaces the full image.
+
+
+def test_failed_sample_extraction_keeps_previous_snapshot_and_media(
+    exporter, monkeypatch, tmp_path,
+):
+    item = corner(tmp_path)
+    monkeypatch.setattr(exporter.scout, "load_corners", lambda _: [item])
+    monkeypatch.setattr(exporter, "export_clip", lambda *args: args[-1].write_bytes(b"clip"))
+    site = tmp_path / "web"
+    media = site / "public" / "media"
+    media.mkdir(parents=True)
+    old_image = media / ("deadbeef-" + "0" * 20 + ".jpg")
+    old_image.write_bytes(b"previous image")
+    snapshot = site / "public" / "corners.json"
+    original = json.dumps({"image": f"/media/{old_image.name}"}).encode()
+    snapshot.write_bytes(original)
+
+    def fail(*_):
+        raise subprocess.CalledProcessError(1, "ffmpeg")
+
+    monkeypatch.setattr(exporter, "sample_frame", fail)
+    with pytest.raises(subprocess.CalledProcessError):
+        exporter.export_site(site)
+
+    assert snapshot.read_bytes() == original
+    assert old_image.read_bytes() == b"previous image"
+    assert not list(media.glob("*.tmp.jpg"))
+
+
+def test_changed_source_cannot_reuse_cached_sample(exporter, monkeypatch, tmp_path):
+    item = corner(tmp_path)
+    monkeypatch.setattr(exporter.scout, "load_corners", lambda _: [item])
+    monkeypatch.setattr(exporter, "export_clip", lambda *args: args[-1].write_bytes(b"clip"))
+    site = tmp_path / "web"
+    exporter.export_site(site)
+    snapshot = site / "public" / "corners.json"
+    original = snapshot.read_bytes()
+    item["video"].local_path.write_bytes(b"changed source")
+    monkeypatch.setattr(exporter, "sample_frame", lambda *_: pytest.fail("Read changed source"))
+
+    with pytest.raises(ServiceError, match="changed"):
+        exporter.export_site(site)
+    assert snapshot.read_bytes() == original
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="Sample extraction requires FFmpeg")
+def test_real_sample_reconstructs_vision_image_at_original_timestamp(
+    exporter, monkeypatch, tmp_path,
+):
+    source = tmp_path / "varying.mp4"
+    subprocess.run([
+        "ffmpeg", "-loglevel", "error", "-f", "lavfi", "-i",
+        "testsrc2=size=160x90:rate=10:duration=3", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+        str(source),
+    ], check=True, capture_output=True)
+    actual_extractor = importlib.import_module("vision_tags")._frame
+    monkeypatch.setattr(exporter, "sample_frame", actual_extractor)
+    image = tmp_path / "sample.jpg"
+
+    exporter.export_image(source, 2.5, image)
+
+    expected = base64.b64decode(actual_extractor(source, 2.5).split(",", 1)[1])
+    other_moment = base64.b64decode(actual_extractor(source, 0.5).split(",", 1)[1])
+    assert image.read_bytes() == expected
+    assert image.read_bytes() != other_moment
+    dimensions = subprocess.run([
+        "ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+        "stream=width,height", "-of", "json", str(image),
+    ], check=True, capture_output=True, text=True)
+    assert json.loads(dimensions.stdout)["streams"][0] == {"width": 1024, "height": 576}
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="Hosted scoring requires Node.js")
@@ -189,3 +445,30 @@ console.log(JSON.stringify(profiles.map(weights => rank(sample.corners, weights,
             assert [item["frame"]["segment_id"] for item in actual["best"]] == [
                 frame["segment_id"] for _, _, frame in expected["best"]
             ]
+
+
+@pytest.mark.parametrize("upload", [False, True])
+def test_zero_valid_frames_full_recording_keeps_unknown_coverage_and_explicit_publication(
+    exporter, monkeypatch, tmp_path, upload,
+):
+    web, _, _ = full_export_fixture(exporter, monkeypatch, tmp_path)
+    item = exporter.scout.load_corners(None)[0]
+    item.update(frames=[], analyzed_seconds=0, coverage=0)
+    hosted = web / "public/corners.json"
+    hosted.write_text('{"previous": "verified hosted snapshot"}\n')
+    before = hosted.read_bytes()
+    class ForbiddenPublisher:
+        def __init__(self, _):
+            pytest.fail("Zero sampled images must not trigger Blob requests.")
+    monkeypatch.setattr(exporter, "BlobPublisher", ForbiddenPublisher)
+
+    payload = exporter.export_site(web, upload=upload)
+
+    local = json.loads((web / "public/corners.local.json").read_text())
+    assert local["corners"][0]["frames"] == []
+    assert local["corners"][0]["analyzed_seconds"] == local["corners"][0]["coverage"] == 0
+    assert payload["corners"][0]["coverage"] == 0
+    if upload:
+        assert json.loads(hosted.read_text())["corners"][0]["coverage"] == 0
+    else:
+        assert hosted.read_bytes() == before

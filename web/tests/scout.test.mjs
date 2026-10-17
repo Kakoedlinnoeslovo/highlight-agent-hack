@@ -104,3 +104,56 @@ test('business input and source clocks handle boundaries', () => {
   assert.equal(clock(65.8), '1:05');
   assert.equal(clock(0), '0:00');
 });
+
+const recording = (camera, { city = 'San Francisco', expected = 182, positive = [0, 1, 2], failed = [] } = {}) => ({
+  camera, city, eligible: true, expected_seconds: expected,
+  frames: Array.from({ length: 37 }, (_, index) => ({
+    segment_id: String(index), start: 5 * index, end: Math.min(5 * (index + 1), 182),
+    counts: failed.includes(index) ? null : { dog: Number(positive.includes(index)) },
+  })),
+});
+
+test('duration weights shortened final segments and preserves the core observation count', () => {
+  const rows = rank([recording('Short final positive', { positive: [0, 1, 36] }), recording('Full positives')], { dog: 1 });
+  assert.equal(rows[0].corner.camera, 'Full positives');
+  close(rows[0].score, 1);
+  close(rows[1].score, 12 / 15);
+  assert.equal(rows[1].core_frames, 3);
+  assert.equal(rows[1].analyzed_seconds, 182);
+  assert.equal(rows[1].coverage, 1);
+  assert.equal(hasEnoughEvidence(rows), true);
+});
+
+test('unknown frames reduce coverage and three observations cannot replace three analyzed minutes', () => {
+  const rows = rank([recording('Gaps', { failed: [4, 5] })], { dog: 1 });
+  assert.equal(rows[0].frames, 35);
+  assert.equal(rows[0].core_frames, 3);
+  assert.equal(rows[0].analyzed_seconds, 172);
+  close(rows[0].coverage, 172 / 182);
+  assert.equal(rows[0].sufficient, false);
+  assert.equal(hasEnoughEvidence(rows), false);
+});
+
+test('coverage must reach 90 percent and city comparisons use independent denominators', () => {
+  const sf = recording('SF', { expected: 205 });
+  const ny = recording('NYC', { city: 'new_york', positive: Array.from({ length: 37 }, (_, i) => i) });
+  const rows = rank([sf, ny], { dog: 1 });
+  assert.deepEqual(rows.map(row => row.corner.camera), ['SF']);
+  close(rows[0].score, 1);
+  assert.equal(hasEnoughEvidence(rows), false);
+  const nyRows = rank([sf, ny], { dog: 1 }, { city: 'New York' });
+  assert.deepEqual(nyRows.map(row => row.corner.camera), ['NYC']);
+  assert.equal(hasEnoughEvidence(nyRows), true);
+  assert.deepEqual(rank([sf, { ...ny, eligible: false }], { dog: 1 }, { city: 'New York' }), []);
+});
+
+test('production observations require valid intervals and reject invalid counts', () => {
+  const invalid = recording('Invalid');
+  invalid.frames[3].counts = { dog: 'unknown' };
+  delete invalid.frames[4].end;
+  invalid.frames[5].end = invalid.frames[5].start;
+  const rows = rank([invalid], { dog: 1 });
+  assert.equal(rows[0].frames, 34);
+  assert.equal(rows[0].analyzed_seconds, 167);
+  assert.equal(hasEnoughEvidence(rows), false);
+});

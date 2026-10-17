@@ -21,6 +21,8 @@ class SourceChunk(Record):
     duration: float = Field(gt=0)
     source_duration: float | None = Field(default=None, gt=0)
     source_sha256: str = ""
+    chunk_index: int | None = Field(default=None, ge=0)
+    segment_count: int | None = Field(default=None, gt=0)
 
     @model_validator(mode="after")
     def included_interval(self):
@@ -41,6 +43,11 @@ class VideoRecord(Record):
     content_sha256: str = ""
     error: str | None = None
     dataset: str | None = None
+    stream_id: str | None = None
+    camera_id: str | None = None
+    location: str | None = None
+    capture_type: str | None = None
+    import_signature: str | None = None
     source_chunks: list[SourceChunk] = Field(default_factory=list)
 
     @model_validator(mode="after")

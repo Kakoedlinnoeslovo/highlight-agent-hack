@@ -88,9 +88,13 @@ def main(argv: list[str] | None = None) -> int:
     for name in ("ingest", "refresh"):
         commands.add_parser(name).add_argument("video_id")
     commands.add_parser("list", help="List registered sources for the current mode")
-    commands.add_parser("datasets", help="Browse supplied SF Streets camera excerpts")
-    dataset = commands.add_parser("import-dataset", help="Import an exact supplied SF Streets excerpt")
+    commands.add_parser("datasets", help="Browse all supplied public recordings")
+    dataset = commands.add_parser("import-dataset", help="Import one complete supplied recording")
     dataset.add_argument("source_uri")
+    datasets = commands.add_parser("import-datasets", help="Resume importing the complete public collection")
+    datasets.add_argument("--all", action="store_true", required=True)
+    datasets.add_argument("--keep-originals", action="store_true",
+                          help="Keep verified raw downloads locally after complete imports")
     commands.add_parser("sample", help="Create an explicitly synthetic offline sample")
     make = commands.add_parser("make", help="Search, select, and render a fresh highlight")
     make.add_argument("video_id")
@@ -138,6 +142,10 @@ def main(argv: list[str] | None = None) -> int:
             _emit(service.dataset_sources())
         elif args.command == "import-dataset":
             _emit(service.import_dataset_source(args.source_uri))
+        elif args.command == "import-datasets":
+            report = service.import_datasets(progress, keep_originals=args.keep_originals)
+            _emit(report)
+            return 0 if report["complete"] else 1
         elif args.command == "sample":
             _emit(service.register_sample())
         elif args.command == "ingest":

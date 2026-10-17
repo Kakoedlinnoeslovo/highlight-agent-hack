@@ -111,7 +111,7 @@ def test_live_dataset_browse_import_and_source_change_update_existing_editor():
     assert choices["choices"] == [(service.city["label"] + " · 6 indexed segments", original)]
     assert choices["value"] == original
     assert action["interactive"] is True
-    assert "Found 1 SF Streets recordings" in notice
+    assert "Found 1 hackathon recordings" in notice
 
     sources, metadata, notice = callback(app, "import_dataset_source")(original)
     assert sources["choices"] == [(service.city["label"], "street")]
@@ -233,3 +233,83 @@ def test_source_change_clears_stale_edit_even_when_invalid_video_id_has_not_chan
     assert values[2]["value"] is None
     assert values[3]["edit_id"] is None
     assert values[3]["windows"] == []
+
+
+def full_recording(index=0, *, stream_id=None, chunks=None):
+    chunks = chunks or [{"original_video": f"s3://supplied/session-{index}/chunk-0.mp4"}]
+    return {"id": f"full-{index}", "label": f"Toronto · camera 1 · session {index}",
+            "local_path": f"full-{index}.mp4", "duration": 600,
+            "dataset": "hackathon-public", "index_status": "ready",
+            "stream_id": stream_id or f"session-{index}", "camera_id": "toronto-cam-1",
+            "location": "toronto", "capture_type": "streets",
+            "original_video": chunks[0]["original_video"], "source_chunks": chunks}
+
+
+def test_live_editor_lists_all_full_recordings_without_duplicate_excerpts_or_personal_sources():
+    service = DatasetService()
+    full = [full_recording(index) for index in range(55)]
+    service.city["original_video"] = full[0]["original_video"]
+    service.records += full
+
+    app = build_app(service)
+
+    choices = component(app, "Source recording").choices
+    assert len(choices) == 55
+    assert {value for _, value in choices} == {item["id"] for item in full}
+    assert service.calls == []
+    chosen = callback(app, "choose_source")("full-54", {"video_id": None, "windows": []})
+    assert chosen[2]["value"] == "full-54.mp4"
+    assert chosen[3]["video_id"] == "full-54"
+    assert chosen[3]["edit_id"] is None
+
+
+def test_current_inventory_excludes_superseded_full_membership_and_its_legacy_excerpt(tmp_path):
+    from highlight_agent.service import HighlightService
+    from highlight_agent.storage import write_json
+
+    service = DatasetService()
+    current_source = {"stream_id": "same-session", "camera_id": "toronto-cam-1",
+                      "location": "toronto", "capture_type": "streets",
+                      "chunks": [{"original_video": f"s3://supplied/same-session/chunk-{index}.mp4",
+                                  "duration": 30, "chunk_index": index, "segment_count": 6}
+                                 for index in range(2)]}
+    current = full_recording(1, stream_id="same-session", chunks=current_source["chunks"])
+    current["import_signature"] = HighlightService.dataset_import_signature(current_source)
+    previous_source = {**current_source, "chunks": current_source["chunks"][:1]}
+    previous = full_recording(0, stream_id="same-session", chunks=previous_source["chunks"])
+    previous["import_signature"] = HighlightService.dataset_import_signature(previous_source)
+    service.city["original_video"] = current["original_video"]
+    service.records += [previous, current]
+    service.config = SimpleNamespace(data_dir=tmp_path / "data")
+    write_json(service.config.data_dir / "catalog/inventory.json", {"sources": [current_source]})
+
+    app = build_app(service)
+
+    assert component(app, "Source recording").choices == [(current["label"], current["id"])]
+    assert service.calls == []
+    stale = callback(app, "choose_source")(previous["id"], {"video_id": previous["id"],
+                                                           "edit_id": "old", "windows": []})
+    assert stale[2]["value"] is None and stale[3]["edit_id"] is None
+
+
+def test_full_collection_source_can_make_a_cut_in_the_existing_editor():
+    class FullCollectionService(EditSessionService):
+        def __init__(self):
+            super().__init__(result_video="full-0")
+            self.records = [self.records[0], full_recording()]
+
+        def make_highlight(self, video_id, prompt, max_duration, progress):
+            self.calls.append(("make", video_id, prompt, max_duration))
+            progress("Searching supplied captions")
+            return self.get_result("new-full-cut")
+
+    service = FullCollectionService()
+    app = build_app(service)
+    assert service.calls == []
+
+    updates = list(callback(app, "make_cut")("full-0", "Find passing bicycles", 30,
+                                           {"video_id": "full-0", "windows": []}))
+
+    assert ("make", "full-0", "Find passing bicycles", 30.0) in service.calls
+    assert updates[-1][0]["video_id"] == "full-0"
+    assert "Your cut is ready" in updates[-1][7]

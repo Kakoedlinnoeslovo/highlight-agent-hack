@@ -29,7 +29,7 @@ from highlight_agent.media import probe_media, render_edit_plan
 from highlight_agent.models import EditPlan, Moment, Record, VideoRecord
 from highlight_agent.selection import SelectionError, create_plan
 from highlight_agent.service import HighlightService, ServiceError
-from highlight_agent.storage import write_json
+from highlight_agent.storage import read_json, write_json
 
 # Riders only, within one sentence: a bicycle parked or locked to a pole is not a cyclist.
 RIDING_CYCLISTS = (
@@ -106,8 +106,81 @@ def _clock(seconds: float) -> str:
 
 
 def _camera_name(video: VideoRecord) -> str:
-    match = re.search(r"cam-(\d+)", video.label)
+    match = re.search(r"cam[-_]?(\d+)", getattr(video, "camera_id", None) or video.label, re.I)
     return f"Camera {match[1]}" if match else video.label
+
+
+def city_label(value: str | None) -> str:
+    """Use one city key in local rankings, exported observations, and browser filters."""
+    value = (value or "San Francisco").strip()
+    return {
+        "san_francisco": "San Francisco", "san francisco": "San Francisco",
+        "sf": "San Francisco", "new_york": "New York", "new york": "New York",
+        "nyc": "New York", "toronto": "Toronto", "nashville": "Nashville",
+    }.get(value.casefold(), value.replace("_", " ").title())
+
+
+def _city_name(video: VideoRecord) -> str:
+    return city_label(getattr(video, "location", None))
+
+
+def scouting_candidate(video: VideoRecord) -> bool:
+    if video.dataset == "sf-streets":
+        return True
+    camera = re.sub(r"[^a-z0-9]", "", (getattr(video, "camera_id", None) or "").lower())
+    return video.dataset == "hackathon-public" and camera in {
+        *(f"sfstreetscam{i}" for i in range(1, 6)), "nycstreetscam1", "nycstreetscam2",
+    }
+
+
+def scouting_eligible(service: HighlightService, video: VideoRecord) -> bool:
+    """Full recordings require an explicit first/middle/last motion review."""
+    if not scouting_candidate(video):
+        return False
+    if video.dataset == "sf-streets":
+        return True  # Retain the previously reviewed three-minute demo until superseded.
+    path = service.config.data_dir / "catalog" / "scouting-review.json"
+    try:
+        reviews = read_json(path)
+    except (OSError, ValueError):
+        return False
+    review = reviews.get(getattr(video, "stream_id", None), {}) if isinstance(reviews, dict) else {}
+    return (
+        isinstance(review, dict) and review.get("eligible") is True
+        and isinstance(review.get("note"), str) and bool(review["note"].strip())
+        and review.get("source_sha256") == video.content_sha256
+    )
+
+
+def preferred_recordings(service: HighlightService) -> list[VideoRecord]:
+    """Full imports supersede matching legacy excerpts without deleting saved sources."""
+    videos = service.list_videos()
+    full = [video for video in videos if video.dataset == "hackathon-public"]
+    inventory_path = service.config.data_dir / "catalog" / "inventory.json"
+    if inventory_path.exists():
+        inventory = read_json(inventory_path)
+        signatures = {service.dataset_import_signature(source) for source in inventory["sources"]}
+        full = [video for video in full if getattr(video, "import_signature", None) in signatures]
+    current_ids = {video.id for video in full}
+    sources = {
+        chunk.original_video for video in full for chunk in video.source_chunks
+    } | {video.original_video for video in full if video.original_video}
+    return [
+        video for video in videos
+        if video.id in current_ids or (
+            video.dataset == "sf-streets"
+            and video.original_video not in sources
+            and not any(chunk.original_video in sources for chunk in video.source_chunks)
+        )
+    ]
+
+
+def scouting_videos(service: HighlightService) -> list[VideoRecord]:
+    return sorted(
+        (video for video in preferred_recordings(service)
+         if video.index_status == "ready" and scouting_eligible(service, video)),
+        key=lambda video: (_city_name(video), _camera_name(video), video.id),
+    )
 
 
 def _recorded(video: VideoRecord) -> str:
@@ -452,6 +525,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--video-id", action="append", help="Defaults to every imported camera")
     parser.add_argument("--duration", type=float, default=30, help="Seconds per camera reel")
+    parser.add_argument("--city", default="San Francisco", help="Compare cameras in this city")
     parser.add_argument("--output-dir", type=Path)
     args = parser.parse_args(argv)
 
@@ -463,17 +537,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.video_id:
         videos = [service.get_video(video_id) for video_id in args.video_id]
     else:
-        videos = sorted(
-            (
-                v
-                for v in service.list_videos()
-                if v.dataset == "sf-streets" and v.index_status == "ready"
-            ),
-            key=_camera_name,
-        )
+        videos = [v for v in scouting_videos(service) if _city_name(v) == city_label(args.city)]
     if not videos:
         print(
-            "No imported SF Streets cameras. Run `highlight-agent import-dataset` first.",
+            "No reviewed street cameras for this city. Import datasets and review recordings first.",
             file=sys.stderr,
         )
         return 1
