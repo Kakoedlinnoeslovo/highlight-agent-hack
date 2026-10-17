@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "highlight-agent"
 version = "0.1.0"
-description = "Find visual moments, direct an edit, and render a shareable compilation."
+description = "Highlight Agent: the video-evidence engine behind Corner Scout, which ranks street corners for any business from sampled-frame observations."
 requires-python = ">=3.11"
 dependencies = [
   "gradio>=6,<7",

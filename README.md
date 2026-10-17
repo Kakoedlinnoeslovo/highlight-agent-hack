@@ -27,7 +27,7 @@ with ranked results and playable source clips.
   <sub>Real searches in the web app, recorded in one take before the UI redesign: dog grooming salon, luxury car detailing, a kids' toy store it refuses to recommend, and why frames beat caption words. The presenter is AI-generated (Nano Banana Pro portrait, voiced and lip-synced with Veo 3.1) and the music was synthesized for this video. <a href="docs/GUIDE.md#the-demo-uses-the-same-renderer">How it was made</a>.</sub>
 </p>
 
-**Inspect the frame proof:** click an audience count to see every matching still, inspect all sampled frames, and play the surrounding moment. [Watch the 108-second frame-proof walkthrough](docs/assets/corner-scout-proof-reveal.mp4) or read the [proof controls and recording guide](docs/PROOF_REVEAL.md).
+**Deep dive: the frame proof.** Click an audience count to see every matching still, inspect all sampled frames, and play the surrounding moment. [Watch the 108-second frame-proof walkthrough](docs/assets/corner-scout-proof-reveal.mp4) or read the [proof controls and recording guide](docs/PROOF_REVEAL.md). The 82-second video above is the main demo.
 
 > **In 30 seconds:** Opening a shop is a bet on a corner. Corner Scout samples street footage, estimates which audiences appear, and matches them to a business description. A vision model reads the frames; a text model identifies core and helpful audiences; application code ranks the corners. Every recommendation links to video evidence. When the best corner has fewer than three frames showing a core audience, it says **“Not enough evidence.”**
 
@@ -71,7 +71,7 @@ Type *dog grooming salon*, *luxury car detailing*, or *student bookshop*. Corner
 
 1. **Describe the business.** The text model proposes its target audiences. Explicit supported audience terms in the description, such as “dog” or “student”, are enforced as core by application rules.
 2. **Compare the observations.** Camera 5 has dogs in three frames; Camera 4 has one; the other three cameras have none in this sample.
-3. **Inspect the ranking.** In the saved run, Camera 5 scores **80/100**. The UI shows the core and helpful audiences and each corner's observed mix.
+3. **Inspect the ranking.** In the saved run, Camera 5 scores **80/100**; live runs land within a few points because the helpful audiences the model adds can change. The UI shows the core and helpful audiences and each corner's observed mix.
 4. **Inspect the evidence.** Click the count to see all matching sampled frames and the full sampling grid. For dogs, inspect 0:02.5, 0:07.5, and 0:12.5; switch the reviewed detail crop to the full frame, then play the surrounding clip. The same dog can appear in several samples. Local renders also save an `edit_plan.json` with exact source windows.
 
 The score is a relative audience match within this sample. It is not an 80% probability that the business will succeed.
@@ -81,7 +81,9 @@ The score is a relative audience match within this sample. It is not an 80% prob
 1. Choose **Dog grooming salon**. Click the 3-of-36 count, inspect the three matching stills, and play the surrounding footage.
 2. Enter **Luxury car detailing**. Camera 1 leads on premium cars: the same footage answers a different question.
 3. Choose **Kids' toy store**. Sparse family observations produce **“Not enough evidence.”**
-4. In the local app, open a **Weave trace** when available to inspect the call. The hosted demo does not create traces.
+4. Choose **Bike repair shop**. Camera 1's captions mention a bicycle in 25 of 36 segments, but its frames show a parked kick scooter and zero cyclists: that is why Corner Scout reads frames.
+
+Present the [live app](https://corner-scout-rouge.vercel.app); this is the same walkthrough as the [82-second demo](https://drive.google.com/file/d/1zZgiQSG6cm3ZWqlijK4rIugzymr1lPrq/view?usp=sharing). The hosted app does not create Weave traces; the local pipeline does (see [Tools used](#tools-used)).
 
 The [demo plan](docs/DEMO_PLAN.md) has the full script, preparation steps, and wording for the limits.
 
@@ -142,7 +144,7 @@ These are saved observations and runs from 17 October 2026, not an independent a
 | Python behavior | Tests cover provider contracts, interval selection, source integrity, persistence, revision/undo, evaluation gates, and real FFmpeg exports |
 | Hosted behavior | Node tests cover profile validation, provider failures, deterministic scoring, sparse-evidence refusal, and clip references |
 | Recorded live checks | [Validation notes](docs/VALIDATION.md) document actual imports, renders, browser checks, and timings separately from mocked tests |
-| Human quality review | **Pending:** spot-check the vision estimates and complete the six-case caption review before claiming measured accuracy |
+| Human quality review | **Pending:** spot-check the 13 vision estimates behind the demo (3 dog, 5 premium-car, 5 young-adult frames) before claiming measured accuracy. The highlight editor's six-case caption review is separate. |
 
 To repeat the checks after [installing the Python development dependencies](docs/GUIDE.md#try-it-locally):
 
@@ -259,4 +261,4 @@ Local `data/` and `outputs/` are ignored. Keep full footage, manifests, renders,
 
 Open an [issue](https://github.com/Kakoedlinnoeslovo/highlight-agent-hack/issues) with the workflow, command, expected behavior, and sanitized error output. Include source windows and model IDs when relevant. For a pull request, explain the behavior change and run the Python or Node checks for the affected workflow. Never include credentials or private source footage.
 
-Maintained by [Kakoedlinnoeslovo](https://github.com/Kakoedlinnoeslovo). For project context, see the [build plan](HACK_PLAN.md), [validation record](docs/VALIDATION.md), [Corner Scout demo plan](docs/DEMO_PLAN.md), [editor demo script](docs/DEMO_SCRIPT.md), and [recording guide](demo-video-toolchain-setup.md).
+Maintained by [Kakoedlinnoeslovo](https://github.com/Kakoedlinnoeslovo). For project context, see the [build plan](HACK_PLAN.md), [validation record](docs/VALIDATION.md), [Corner Scout demo plan](docs/DEMO_PLAN.md), and [recording guide](demo-video-toolchain-setup.md).
