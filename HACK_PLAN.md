@@ -2,6 +2,8 @@
 
 Real-Time Video Agents Hack · London · 17 October 2026
 
+The current jury walkthrough is the [business-location example in the README](README.md#a-60-second-jury-walkthrough). This build plan also retains the conversational editor's implementation milestones and presentation checks.
+
 ## Requirements and success criteria
 
 The workshop presentation establishes a **4:30 PM BST submission deadline**, **two-minute first round**, and **three-minute top-five final at 6 PM**. List all team members. Confirm recording requirements in the submission form before uploading. Judging covers idea, intuitive design, technical quality, reproducibility, documented inputs/outputs and evaluation, and effective use of at least three sponsor tools. Demonstrate working software before explaining slides. Workshop photographs stay local because they include access details.
@@ -70,7 +72,7 @@ After the actual rehearsal is assembled this way, say: **“The highlights—and
 
 VAST authentication/configuration, a real W&B inference request, and remote Weave trace delivery/read-back now pass. The W&B project must belong to an accessible workspace; an inaccessible project returned HTTP 401 even with a valid key. The verified setup/inference/trace check took 4.93 seconds. These connection checks do not establish the SF Streets end-to-end flow; see [validation results](docs/VALIDATION.md).
 
-Read-only dataset inspection found 122 public SF Streets chunks across five camera streams. SF5 has 30 ordered chunks with 30-second indexed windows, and its first source is `s3://team-37-vss-chunks/team-37/20261006_123546_sf5_chunk_0000.mp4`. The media endpoint returned MP4 bytes, and caption rows reported `nvidia/cosmos3-nano-reasoner`. Import, assembled source alignment, both briefs, complete rendering, caption quality, and reel latency require their own recorded checks.
+Read-only dataset inspection found 122 public SF Streets chunks across five camera streams. SF5 has 30 ordered chunks with 30-second indexed windows, and its first source is `s3://team-37-vss-chunks/team-37/20261006_123546_sf5_chunk_0000.mp4`. The media endpoint returned MP4 bytes, and caption rows reported `nvidia/cosmos3-nano-reasoner`. Subsequent checks of import, source alignment, both briefs, rendering, and latency are recorded in the [validation results](docs/VALIDATION.md). Human caption review and the submission recording remain pending.
 
 ### Historical index evidence
 

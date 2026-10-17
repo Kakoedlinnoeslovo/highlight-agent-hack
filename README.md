@@ -135,6 +135,8 @@ The importer downloads the exact original objects for up to six contiguous chunk
 
 Each remote caption interval is relative to its own chunk. The importer measures the prepared excerpts and records their cumulative starts in the assembled recording; retrieval adds the matching offset to each original interval. The source player, edit plan, and evidence windows use this continuous indexed timeline. Exact original source URIs, original durations and hashes, and prepared excerpt boundaries preserve the mapping back to the supplied dataset.
 
+Reimporting a registered source keeps its video ID. If local media is missing or changed, the importer rebuilds the registered excerpt and checks its saved source hashes, timing, and caption coverage before replacing the media.
+
 ### 3. Build the business report
 
 Import each camera you want to compare with `import-dataset`; the saved demo uses five. The report includes every imported SF Streets recording marked ready.
@@ -202,6 +204,8 @@ uv run python scripts/corner_scout.py --business 'bike repair shop'
 ```
 
 Frame counts and audience categories are model estimates. They are separate from the caption-segment counts and measured run shown above.
+
+Tagging reuses valid cached observations and retries failed or invalid ones. Failed observations remain gaps rather than zero counts. The [alternate prototype demo plan](docs/DEMO_PLAN.md) records earlier free-text examples; the jury walkthrough above uses the preset business report.
 
 ## Under the hood
 

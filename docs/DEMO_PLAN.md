@@ -1,7 +1,9 @@
-# Demo plan — Corner Scout
+# Alternate prototype demo plan — Corner Scout
 
-Final plan · Real-Time Video Agents Hack · London · 17 October 2026
-Submission closes **4:30 PM BST** (target **4:15 PM**). Recording secured by **3:45 PM**. First round: **2 minutes**. Top-five final: **3 minutes at 6 PM**.
+Alternate prototype plan · Real-Time Video Agents Hack · London · 17 October 2026
+Submission closes **4:30 PM BST** (target **4:15 PM**). Target recording deadline: **3:45 PM**. First round: **2 minutes**. Top-five final: **3 minutes at 6 PM**.
+
+The current jury example is the [preset business-report walkthrough in the README](../README.md#a-60-second-jury-walkthrough). This alternate plan preserves earlier free-text prototype examples; its frame estimates, rankings, and timings describe those saved exploratory runs and need checking after cache or code changes. Human quality review and the submission recording remain pending.
 
 ## The pitch
 
@@ -20,9 +22,9 @@ Submission closes **4:30 PM BST** (target **4:15 PM**). Recording secured by **3
 | Business → audience | Llama 3.3 on W&B Inference | Free text becomes one or two **core** audiences plus **helpful** ones. An audience named in the text ("dog", "luxury", "student", "kids", "bike"…) is always core. |
 | Ranking | Code | Each audience scored by how often it appears at a corner, relative to the best corner. Core audiences are 75% of the match. Audiences present everywhere (ordinary adults, mid-range cars) are ignored. Fewer than 3 core-audience frames at the best corner → **"Not enough evidence"**. |
 | Evidence | Shared renderer | Strongest matching frames at the top two corners cut into a reel; each clip names what was counted and its exact source chunk. |
-| Trace | Weave | Every run is traced; the link is on the result. |
+| Trace | Weave | When configured and available, a run's trace link appears on the result. |
 
-The model never ranks corners or states counts. Cosmos captions power the city report (finale) and showed why vision was needed: they never name car brands or describe who people are.
+The text model chooses audience weights; code ranks corners using the vision model's frame estimates. Existing Cosmos captions separately power the city report (finale).
 
 ## Corners
 

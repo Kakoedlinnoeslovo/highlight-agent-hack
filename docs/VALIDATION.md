@@ -1,5 +1,13 @@
 # Implementation validation — 17 October 2026
 
+## Current PR verification
+
+- `uv run pytest -q`: **225 passed in 9.74 seconds**. Ruff passed, and `uv build` produced the source distribution and wheel for **0.1.0**.
+- Browser checks of the business report regenerated from saved artifacts confirmed all four tabs, the bike-shop and café winners, the transit-kiosk tie, and the dog-shop abstention. No page overflow or console errors were observed. This reused saved results rather than making new provider requests.
+- Added regression checks cover recovery of registered dataset media, invalid or failed vision observations and cache retries, report count wording, tied rankings, and complete provider failure.
+
+Human review of captions and vision estimates, the submission recording, and submission itself remain pending. Automated checks and saved-report playback do not complete those steps.
+
 ## Current SF Streets workflow
 
 The application now uses the supplied public SF Streets dataset. The live picker excludes earlier gameplay recordings, and the former YouTube downloader exits without downloading or uploading anything.
@@ -11,7 +19,7 @@ The application now uses the supplied public SF Streets dataset. The live picker
 - “Show me buses and street traffic.” produced different windows at 0–8, 18–28, and 8–18 seconds: a playable 28-second MP4 in 18.634 seconds, including 1.931 seconds rendering. This run completed through the browser UI.
 - The browser revision removed clip two, moved the highest-ranked remaining moment first, and rendered an 18-second result with windows 8–18 and 0–8 seconds.
 - Browser undo restored the original 28-second traffic reel. Selecting its first evidence row loaded a playable eight-second source preview; both video players reported ready state 4 with no media errors. The 390-pixel mobile viewport had no page overflow.
-- The current suite passes **192 tests** and Ruff. New checks cover dataset browsing/downloads, chunk provenance and timestamp mapping, actual normalized assembly/rendering, omitted tails, partial failures, separate street selections, and stale sessions accessing legacy sources.
+- At this earlier SF Streets checkpoint, **192 tests** and Ruff passed. Those checks cover dataset browsing/downloads, chunk provenance and timestamp mapping, actual normalized assembly/rendering, omitted tails, partial failures, separate street selections, and stale sessions accessing legacy sources.
 
 Local artifacts are `outputs/validation/sf-import.json`, `sf-live-report.json`, `sf-people.json`, and `sf-traffic.json`, with per-edit MP4s, plans, evidence, and actual Weave trace links in `outputs/<edit_id>/`. These artifacts and all footage remain ignored by Git.
 
@@ -36,7 +44,7 @@ Generated screenshots, the browser report, and the assembled walkthrough are und
 
 ## Earlier PR verification
 
-The complete local suite passes **122 tests**, with Ruff checks and both source/wheel builds passing. An isolated offline smoke check constructed the UI, rendered different Pro/Roast reels, and exercised revision and undo.
+The earlier local suite passed **122 tests**, with Ruff checks and both source/wheel builds passing. An isolated offline smoke check constructed the UI, rendered different Pro/Roast reels, and exercised revision and undo.
 
 Pre-landing regression checks cover upload source hashes, recovery of registered media, feasible overlapping selections, bounded alternate search, saved timing provenance, delayed audio/video, and video bounds independent of audio tails. Live gameplay validation remains separate from these local checks.
 
