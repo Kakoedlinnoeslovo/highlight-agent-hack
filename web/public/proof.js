@@ -1,4 +1,6 @@
-/** Select evidence directly from every sampled frame, independently of ranking's best three. */
+import { scoringFrames } from './scout.js';
+
+/** Select evidence from ranking's independent observations, beyond its best three. */
 export function coreAudiences(weights, threshold = 0.75) {
   return Object.entries(weights ?? {})
     .filter(([, weight]) => typeof weight === 'number' && Number.isFinite(weight)
@@ -9,10 +11,11 @@ export function coreAudiences(weights, threshold = 0.75) {
 }
 
 const frameTime = frame => Number.isFinite(frame.sampledAt) ? frame.sampledAt
-  : Number.isFinite(frame.start) ? frame.start : 0;
+  : Number.isFinite(frame.seconds) ? frame.seconds
+    : Number.isFinite(frame.start_seconds ?? frame.start) ? (frame.start_seconds ?? frame.start) : 0;
 
-function chronologicalFrames(corner) {
-  return (corner?.frames ?? [])
+export function proofSamples(corner) {
+  return scoringFrames(corner ?? {})
     .map((frame, index) => ({ frame, index }))
     .sort((a, b) => frameTime(a.frame) - frameTime(b.frame) || a.index - b.index)
     .map(({ frame }) => frame);
@@ -20,7 +23,7 @@ function chronologicalFrames(corner) {
 
 /** Returns original frame objects so selection can use their stable segment_id. */
 export function proofFrames(corner, audience) {
-  return chronologicalFrames(corner).filter(frame => {
+  return proofSamples(corner).filter(frame => {
     const count = frame.counts?.[audience];
     return typeof count === 'number' && Number.isFinite(count) && count > 0;
   });
@@ -41,7 +44,7 @@ export function validFocus(frame, audience) {
 export function initialProofFrame(corner, audience) {
   const matches = proofFrames(corner, audience);
   return matches.find(frame => validFocus(frame, audience))
-    ?? matches[0] ?? chronologicalFrames(corner)[0] ?? null;
+    ?? matches[0] ?? proofSamples(corner)[0] ?? null;
 }
 
 /** Keep the half-second sampling position visible, including on whole seconds. */

@@ -144,10 +144,15 @@ def scouting_eligible(service: HighlightService, video: VideoRecord) -> bool:
         reviews = read_json(path)
     except (OSError, ValueError):
         return False
-    review = reviews.get(getattr(video, "stream_id", None), {}) if isinstance(reviews, dict) else {}
+    if not isinstance(reviews, dict):
+        return False
+    # Capture gaps can split one stream into several independently reviewed recordings.
+    # A specific decision takes precedence, including a denial or an invalidated hash.
+    review = reviews[video.id] if video.id in reviews else reviews.get(video.stream_id, {})
     return (
         isinstance(review, dict) and review.get("eligible") is True
         and isinstance(review.get("note"), str) and bool(review["note"].strip())
+        and isinstance(review.get("source_sha256"), str) and bool(review["source_sha256"])
         and review.get("source_sha256") == video.content_sha256
     )
 

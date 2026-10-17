@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { coreAudiences, proofFrames, initialProofFrame, validFocus, sampleClock } from '../public/proof.js';
+import { coreAudiences, proofSamples, proofFrames, initialProofFrame, validFocus, sampleClock } from '../public/proof.js';
 import { rank } from '../public/scout.js';
 
 const crop = { x: 0.125, y: 0.5, width: 0.5, height: 0.5 };
@@ -47,6 +47,41 @@ test('presence counts sampled frames, retains each corner denominator, and ignor
   assert.deepEqual(corners.map(corner => corner.frames.length), [36, 45]);
   assert.deepEqual(proofFrames({ frames: [frame('zero', 2.5, { dog: 0 }),
     frame('negative', 7.5, { dog: -1 }), frame('string', 12.5, { dog: '1' })] }, 'dog'), []);
+});
+
+test('ranking and the inspector share independent valid samples for duplicate and overlapping windows', () => {
+  const scenarios = [
+    { intervals: [[0, 60, 1], [0, 60, 1], [0, 60, 1], [60, 180, null]],
+      samples: 1, positives: 1, seconds: 60 },
+    { intervals: [[0, 90, 1], [60, 120, 1], [120, 180, 0]],
+      samples: 2, positives: 1, seconds: 180 },
+    { intervals: [[0, 120, 1], [0, 60, 0], [60, 120, 0], [120, 180, 1]],
+      samples: 3, positives: 1, seconds: 180 },
+  ];
+  for (const scenario of scenarios) {
+    const corner = { camera: 'Overlapping recording', eligible: true, expected_seconds: 180,
+      frames: scenario.intervals.map(([start, end, dog], index) => ({
+        segment_id: String(index), start, end, sampledAt: (start + end) / 2,
+        counts: dog === null ? null : { dog },
+      })) };
+    const originalFrames = [...corner.frames];
+    const [row] = rank([corner], { dog: 1 });
+    const samples = proofSamples(row.corner);
+    const positives = proofFrames(row.corner, 'dog');
+    assert.equal(samples.length, scenario.samples);
+    assert.equal(samples.length, row.frames);
+    assert.equal(positives.length, scenario.positives);
+    assert.equal(positives.length, row.seen.dog);
+    assert.equal(positives.length, row.core_frames);
+    assert.equal(samples.filter(item => item.counts.dog > 0).length, positives.length);
+    assert.ok(positives.every(item => samples.includes(item)));
+    assert.ok(row.best.every(item => positives.includes(item.frame)));
+    assert.ok(samples.includes(initialProofFrame(row.corner, 'dog')));
+    assert.equal(row.analyzed_seconds, scenario.seconds);
+    assert.equal(row.coverage, scenario.seconds / 180);
+    assert.equal(row.sufficient, false);
+    assert.deepEqual(corner.frames, originalFrames);
+  }
 });
 
 test('proof matches sort by sampledAt with start fallback, retain stable ties, and do not reorder source frames', () => {

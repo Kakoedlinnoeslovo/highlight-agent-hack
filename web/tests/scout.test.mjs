@@ -157,3 +157,41 @@ test('production observations require valid intervals and reject invalid counts'
   assert.equal(rows[0].analyzed_seconds, 167);
   assert.equal(hasEnoughEvidence(rows), false);
 });
+
+const intervalRecording = (camera, intervals, expected = 180) => ({
+  camera, eligible: true, expected_seconds: expected,
+  frames: intervals.map(([start, end, dog], index) => ({
+    segment_id: String(index), start, end, counts: dog === null ? null : { dog },
+  })),
+});
+
+test('duplicate windows cannot supply duration or independent core observations', () => {
+  for (const rest of [null, 0]) {
+    const rows = rank([intervalRecording('Repeated window', [
+      [0, 60, 1], [0, 60, 1], [0, 60, 1], [60, 120, rest], [120, 180, rest],
+    ])], { dog: 1 });
+    assert.equal(rows[0].analyzed_seconds, rest === null ? 60 : 180);
+    close(rows[0].coverage, rest === null ? 1 / 3 : 1);
+    assert.equal(rows[0].core_frames, 1);
+    assert.equal(rows[0].seen.dog, 1);
+    assert.equal(rows[0].best.length, 1);
+    assert.equal(hasEnoughEvidence(rows), false);
+  }
+});
+
+test('overlapping windows use unique positive time while unequal disjoint windows remain valid', () => {
+  const rows = rank([
+    intervalRecording('Overlapping', [[0, 90, 1], [60, 120, 1], [120, 181.5, 0]], 181.5),
+    intervalRecording('Independent unequal', [[0, 11, 1], [11, 41, 1], [41, 181.5, 1]], 181.5),
+  ], { dog: 1 });
+  assert.equal(rows[0].corner.camera, 'Independent unequal');
+  assert.equal(rows[0].analyzed_seconds, 181.5);
+  assert.equal(rows[0].coverage, 1);
+  assert.equal(rows[0].score, 1);
+  assert.equal(rows[0].core_frames, 3);
+  assert.equal(hasEnoughEvidence(rows), true);
+  assert.equal(rows[1].analyzed_seconds, 181.5);
+  close(rows[1].score, 120 / 181.5);
+  assert.equal(rows[1].core_frames, 1);
+  assert.equal(rows[1].sufficient, false);
+});

@@ -52,9 +52,57 @@ function frameDuration(frame, strict = false) {
     && Number.isFinite(end) && start >= 0 && end > start ? end - start : 0;
 }
 
+function analyzedDuration(frames) {
+  const intervals = [];
+  let seconds = 0;
+  for (const frame of frames) {
+    const start = frame.start_seconds ?? frame.start;
+    const end = frame.end_seconds ?? frame.end;
+    if (start == null || end == null) seconds += frameDuration(frame);
+    else if (frameDuration(frame) > 0) intervals.push([start, end]);
+  }
+  intervals.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  let coveredEnd = 0;
+  for (const [start, end] of intervals) {
+    seconds += Math.max(0, end - Math.max(start, coveredEnd));
+    coveredEnd = Math.max(coveredEnd, end);
+  }
+  return seconds;
+}
+
+function independentObservations(frames) {
+  const selected = [];
+  const intervals = [];
+  frames.forEach((frame, index) => {
+    const start = frame.start_seconds ?? frame.start;
+    const end = frame.end_seconds ?? frame.end;
+    if (start == null || end == null) selected.push({ frame, index });
+    else intervals.push({ frame, index, start, end });
+  });
+  intervals.sort((a, b) => a.end - b.end || a.start - b.start || a.index - b.index);
+  let coveredEnd = 0;
+  for (const item of intervals) {
+    if (item.start >= coveredEnd) {
+      selected.push(item);
+      coveredEnd = item.end;
+    }
+  }
+  return selected.sort((a, b) => a.index - b.index).map(item => item.frame);
+}
+
 function validCounts(frame) {
   return frame?.counts !== null && typeof frame?.counts === 'object' && !Array.isArray(frame.counts)
     && Object.values(frame.counts).every(value => Number.isInteger(value) && value >= 0);
+}
+
+function validObservationFrames(corner) {
+  const strict = ['expected_seconds', 'coverage', 'eligible'].some(key => Object.hasOwn(corner, key));
+  return (corner.frames ?? []).filter(frame => validCounts(frame) && frameDuration(frame, strict) > 0);
+}
+
+/** The same independent observations support ranking counters and the proof inspector. */
+export function scoringFrames(corner) {
+  return independentObservations(validObservationFrames(corner));
 }
 
 /** Matches scripts/corner_scout.py:rank; scores positive presence per valid analyzed second. */
@@ -75,24 +123,25 @@ export function rank(corners, inputWeights, options = {}) {
   const helpful = keys.filter(key => weights[key] < coreThreshold);
   const rows = corners.map(corner => {
     const strict = ['expected_seconds', 'coverage', 'eligible'].some(key => Object.hasOwn(corner, key));
-    const frames = corner.frames.filter(frame => validCounts(frame) && frameDuration(frame, strict) > 0);
-    const analyzedSeconds = frames.reduce((sum, frame) => sum + frameDuration(frame), 0);
+    const frames = validObservationFrames(corner);
+    const observations = scoringFrames(corner);
+    const analyzedSeconds = analyzedDuration(frames);
     let expectedSeconds = corner.expected_seconds ?? corner.duration ?? analyzedSeconds;
     if (typeof expectedSeconds !== 'number' || !Number.isFinite(expectedSeconds)) expectedSeconds = 0;
     const coverage = expectedSeconds > 0 ? Math.min(1, analyzedSeconds / expectedSeconds) : 0;
     const seen = Object.fromEntries(audienceKeys.map(key => [key,
-      frames.filter(frame => Boolean(frame.counts[key])).length]));
+      observations.filter(frame => Boolean(frame.counts[key])).length]));
     const rate = Object.fromEntries(keys.map(key => [key,
-      frames.filter(frame => Boolean(frame.counts[key])).reduce((sum, frame) => sum + frameDuration(frame), 0)
+      analyzedDuration(frames.filter(frame => Boolean(frame.counts[key])))
         / Math.max(1e-12, analyzedSeconds)]));
-    const scored = frames.map(frame => ({
+    const scored = observations.map(frame => ({
       value: keys.reduce((sum, key) => sum + weights[key] * Math.min(frame.counts[key] || 0, cap), 0),
       hasCore: core.some(key => Boolean(frame.counts[key])),
       frame,
     }));
     const coreFrames = scored.filter(item => item.hasCore).length;
     return {
-      corner, seen, rate, frames: frames.length,
+      corner, seen, rate, frames: observations.length,
       core_frames: coreFrames, analyzed_seconds: analyzedSeconds, expected_seconds: expectedSeconds,
       coverage, eligible: corner.eligible !== false, coverage_required: strict,
       sufficient: coreFrames >= MIN_FRAMES && (!strict || (analyzedSeconds >= MIN_ANALYZED_SECONDS && coverage >= MIN_COVERAGE)),

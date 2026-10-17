@@ -94,7 +94,7 @@ def load_corners(service: HighlightService, city_name: str | None = None) -> lis
         except (OSError, ValueError):
             continue
         frames = list(valid_cached_frames(video, moments, manifest).values())
-        analyzed = sum(frame["end_seconds"] - frame["start_seconds"] for frame in frames)
+        analyzed = _analyzed_duration(frames)
         corners.append(
             {
                 "video": video,
@@ -134,6 +134,42 @@ def _frame_duration(frame: dict, strict: bool = False) -> float:
     return end - start
 
 
+def _analyzed_duration(frames: list[dict]) -> float:
+    """Count each valid second once, even when observation windows overlap."""
+    intervals = []
+    legacy_seconds = 0
+    for frame in frames:
+        start = frame.get("start_seconds", frame.get("start"))
+        end = frame.get("end_seconds", frame.get("end"))
+        if start is None or end is None:
+            legacy_seconds += _frame_duration(frame)
+        elif _frame_duration(frame) > 0:
+            intervals.append((start, end))
+    seconds, covered_end = legacy_seconds, 0
+    for start, end in sorted(intervals):
+        seconds += max(0, end - max(start, covered_end))
+        covered_end = max(covered_end, end)
+    return seconds
+
+
+def _independent_observations(frames: list[dict]) -> list[dict]:
+    """Use a maximum set of disjoint windows as independent observations."""
+    selected, intervals = [], []
+    for index, frame in enumerate(frames):
+        start = frame.get("start_seconds", frame.get("start"))
+        end = frame.get("end_seconds", frame.get("end"))
+        if start is None or end is None:
+            selected.append((index, frame))  # Historical fixtures have no source intervals.
+        else:
+            intervals.append((end, start, index, frame))
+    covered_end = 0
+    for end, start, index, frame in sorted(intervals, key=lambda item: item[:3]):
+        if start >= covered_end:
+            selected.append((index, frame))
+            covered_end = end
+    return [frame for _, frame in sorted(selected)]
+
+
 def _valid_counts(frame: dict) -> bool:
     counts = frame.get("counts")
     return isinstance(counts, dict) and all(
@@ -168,18 +204,20 @@ def rank(corners: list[dict], weights: dict[str, float], city_name="San Francisc
     frames = {id(corner): [frame for frame in corner["frames"]
                           if _valid_counts(frame) and _frame_duration(frame, strict[id(corner)]) > 0]
               for corner in corners}
-    analyzed = {id(corner): sum(_frame_duration(frame) for frame in frames[id(corner)])
+    observations = {id(corner): _independent_observations(frames[id(corner)]) for corner in corners}
+    analyzed = {id(corner): _analyzed_duration(frames[id(corner)])
                 for corner in corners}
     seen = {
         id(corner): {
-            key: sum(1 for f in frames[id(corner)] if f["counts"].get(key)) for key in TAXONOMY
+            key: sum(1 for frame in observations[id(corner)] if frame["counts"].get(key))
+            for key in TAXONOMY
         }
         for corner in corners
     }
     rate = {
         id(corner): {
-            key: sum(_frame_duration(frame) for frame in frames[id(corner)]
-                     if frame["counts"].get(key)) / max(1e-12, analyzed[id(corner)])
+            key: _analyzed_duration([frame for frame in frames[id(corner)]
+                                     if frame["counts"].get(key)]) / max(1e-12, analyzed[id(corner)])
             for key in TAXONOMY
         }
         for corner in corners
@@ -196,7 +234,7 @@ def rank(corners: list[dict], weights: dict[str, float], city_name="San Francisc
     rows = []
     for corner in corners:
         scored = []
-        for frame in frames[id(corner)]:
+        for frame in observations[id(corner)]:
             counts = frame["counts"]
             value = sum(w * min(counts.get(k, 0), CAP) for k, w in weights.items())
             scored.append((value, any(counts.get(k, 0) for k in core), frame))

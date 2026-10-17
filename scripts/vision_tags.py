@@ -244,7 +244,7 @@ def review_samples(service: HighlightService, videos: list) -> list[dict]:
     samples = []
     for video in videos:
         HighlightService._verify_source(video)
-        stem = getattr(video, "stream_id", None) or video.id
+        stem = video.id
         seconds = [min(0.5, video.duration / 4), video.duration / 2, max(0, video.duration - 0.5)]
         images = []
         for label, point in zip(("first", "middle", "last"), seconds):
@@ -253,7 +253,8 @@ def review_samples(service: HighlightService, videos: list) -> list[dict]:
                 city._thumbnail(video.local_path, point, path)
             images.append({"seconds": point, "path": str(path)})
         samples.append({
-            "stream_id": stem, "video_id": video.id, "camera": city._camera_name(video),
+            "review_key": video.id, "stream_id": video.stream_id or video.id,
+            "video_id": video.id, "camera": city._camera_name(video),
             "city": city._city_name(video), "source_sha256": video.content_sha256,
             "eligible": city.scouting_eligible(service, video), "samples": images,
         })

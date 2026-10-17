@@ -314,17 +314,19 @@ Full recordings need a **fixed-camera review before audience tagging**. Extract 
 uv run python scripts/vision_tags.py --review-samples
 ```
 
-Inspect the generated images, then record each camera decision in `data/catalog/scouting-review.json`. Replace the placeholders with the recording's stream ID and registered content hash; merge entries if the file already exists:
+Inspect the generated images, then record each recording's decision in `data/catalog/scouting-review.json`. Use the `review_key` (the recording's `video_id`) and registered `source_sha256` from `--review-samples`; separate recordings from the same stream each get their own key. Merge entries if the file already exists:
 
 ```json
 {
-  "STREAM_ID": {
+  "RECORDING_ID": {
     "eligible": true,
     "note": "First, middle, and last views show the same fixed street corner.",
     "source_sha256": "THE_REGISTERED_CONTENT_HASH"
   }
 }
 ```
+
+Existing stream-ID keys remain valid only for their exact recorded source hash. A recording-ID decision takes precedence over its stream entry, including a rejection or mismatched hash. Both formats require an explicit matching `source_sha256`.
 
 Only mark eligible recordings after inspection. Previously reviewed legacy SF sample excerpts keep their eligibility until superseded. Then analyze the eligible recordings and launch Scout:
 
