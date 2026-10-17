@@ -1,0 +1,5 @@
+tests/
+dev.mjs
+node_modules/
+*.log
+.env*
