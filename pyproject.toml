@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "highlight-agent"
+version = "0.1.0"
+description = "Find visual moments, direct an edit, and render a shareable compilation."
+requires-python = ">=3.11"
+dependencies = [
+  "gradio>=6,<7",
+  "httpx>=0.28,<1",
+  "openai>=2,<3",
+  "pydantic>=2.11,<3",
+  "python-dotenv>=1,<2",
+  "weave>=0.52,<1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10", "ruff>=0.12,<1", "playwright>=1.59,<2"]
+
+[project.scripts]
+highlight-agent = "highlight_agent.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["highlight_agent"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP"]
+
