@@ -17,11 +17,11 @@ Use this guide to deploy the hosted app, connect the local providers, import foo
 
 ## Host on Vercel
 
-The live site runs from [`web/`](../web/) on **Node.js 24**, with no npm dependencies. It serves a saved snapshot of **180 vision observations across five corners**, plus individual five-second, 480p H.264 evidence clips. Each business request makes a fresh W&B Inference call through `/api/profile`; the browser scores the cached observations using the local app's deterministic rules, including the minimum of three core-audience frames.
+The live site runs from [`web/`](../web/) on **Node.js 24**, with no npm dependencies. It serves a saved snapshot of **180 vision observations across five corners**, their original-source JPEG samples, and individual five-second, 480p H.264 evidence clips. Each business request makes a fresh W&B Inference call through `/api/profile`; the browser scores the cached observations using the local app's deterministic rules, including the minimum of three core-audience frames.
 
-The snapshot, short clips, and JPEG source previews are checked in, so deployment does not require the private dataset or full source recordings. Importing footage, refreshing vision tags, the Gradio editor, and FFmpeg rendering run locally. The hosted runtime uses neither VAST nor FFmpeg and does not create Weave traces.
+The snapshot, sampled images, short clips, and JPEG source previews are checked in, so deployment does not require the private dataset or full source recordings. Importing footage, refreshing vision tags, the Gradio editor, and FFmpeg rendering run locally. The hosted runtime uses neither VAST nor FFmpeg and does not create Weave traces.
 
-To refresh the exported observations, clips, source previews, and shared motion styles after [importing footage](#2-import-supplied-sf-streets-footage) and [running the vision pass](#3-run-corner-scout):
+To refresh the exported observations, sampled images, clips, source previews, and shared motion styles after [importing footage](#2-import-supplied-sf-streets-footage) and [running the vision pass](#3-run-corner-scout):
 
 ```sh
 uv run python scripts/export_vercel.py
@@ -229,13 +229,13 @@ The same workflow is available in the UI: source playback, brief cards, progress
 
 **Application code also controls timestamps.** The shared selector adds two seconds of setup and three seconds of aftermath, clamps to the source, skips overlapping street scenes, and fits complete events into the budget. A shorter reel is valid when fewer complete matches fit.
 
-The custom-brief editor uses VAST retrieval followed by W&B ranking. The caption-based workflows reuse the supplied Cosmos captions. Credentials, the hosted index, and full source recordings are not bundled; `web/public/` contains the exported observations and short evidence clips used by the hosted demo. See the [validation notes](VALIDATION.md) for measured evidence and remaining checks.
+The custom-brief editor uses VAST retrieval followed by W&B ranking. The caption-based workflows reuse the supplied Cosmos captions. Credentials, the hosted index, and full source recordings are not bundled; `web/public/` contains the exported observations, sampled images, and short evidence clips used by the hosted demo. See the [validation notes](VALIDATION.md) for measured evidence and remaining checks.
 
 ## Inputs, outputs, and evidence
 
 **Input:** supplied SF Streets camera streams, up to six contiguous source chunks per recording and their existing VAST captions. Choose a business preset for a comparison report, or a custom brief and a duration of at most 30 seconds for the editor.
 
-**Local renderer output:** a **1280×720, 30 fps, H.264/AAC MP4** with `yuv420p` and `+faststart`. Sources without audio receive silence. The hosted demo plays exported clips as a playlist rather than rendering a new compilation. Each new local highlight writes:
+**Local renderer output:** a **1280×720, 30 fps, H.264/AAC MP4** with `yuv420p` and `+faststart`. Sources without audio receive silence. The hosted demo lets you inspect sampled stills and play a selected five-second context clip. Each new local highlight writes:
 
 ```text
 outputs/<edit_id>/
@@ -247,7 +247,7 @@ outputs/<edit_id>/
 
 All edit window timestamps are seconds relative to the assembled local recording. Each `SourceChunk` retains its exact remote `original_video` URI, original `source_duration` and `source_sha256`, plus the prepared excerpt's measured `duration` and cumulative `start_seconds`. Remote segment intervals are validated within the indexed chunk window before being shifted onto the assembled timeline. Revisions write a new reel, plan, and result linked to the previous edit; they reuse the existing selection evidence. Shared Python contracts live in [`highlight_agent/models.py`](../highlight_agent/models.py), with `make_highlight(video_id, prompt, max_duration=30)` and `render_edit_plan(plan)` as the main service/rendering interfaces.
 
-Keep `.env`, full source recordings, local manifests, renders, and traces out of Git. `data/` and `outputs/` are ignored; the public demo snapshot and short clips in `web/public/` are intentionally checked in. Preserve related local artifacts together for offline presentation.
+Keep `.env`, full source recordings, local manifests, renders, and traces out of Git. `data/` and `outputs/` are ignored; the public demo snapshot, sampled images, and short clips in `web/public/` are intentionally checked in. Preserve related local artifacts together for offline presentation.
 
 ## Prove the result
 
@@ -303,10 +303,10 @@ The [README demo video](../README.md) was recorded from the real web app and ass
 ```sh
 cd web && npm run dev                     # in another terminal: the hosted app, locally
 uv run python scripts/record_demo.py      # real searches → data/rehearsal.mp4 + measured beats
-uv run highlight-agent demo examples/demo-plan.json --output-dir outputs/demo
+uv run highlight-agent demo data/rehearsal-plan.json --output-dir outputs/demo
 ```
 
-`record_demo.py` drives the app in headless Chromium and captures every painted frame. Each search calls the live `/api/profile` endpoint, so on-screen timings are real. Captions, the pointer, and title cards are in-browser overlays, because the minimal FFmpeg build has no `drawtext`. The script writes each beat's measured start and end to `data/rehearsal.json`. [`examples/demo-plan.json`](../examples/demo-plan.json) holds the measured windows from the published take, recorded before the UI redesign. Pass `--chromium PATH` if Playwright's bundled browser is missing.
+`record_demo.py` drives the app in headless Chromium and captures every painted frame. Each search calls the live `/api/profile` endpoint, so on-screen timings are real. Captions, the pointer, and title cards are in-browser overlays, because the minimal FFmpeg build has no `drawtext`. The script writes measured beats to `data/rehearsal.json` and the matching assembly plan to `data/rehearsal-plan.json`. [`examples/demo-plan.json`](../examples/demo-plan.json) preserves the measured windows from the earlier published take, recorded before the UI redesign. Pass `--chromium PATH` if Playwright's bundled browser is missing. For the separate 108-second captioned cut, follow the [frame-proof recording guide](PROOF_REVEAL.md).
 
 For the published cut, an AI presenter (a Nano Banana Pro portrait, voiced and lip-synced with Veo 3.1) was composited into four 8-second slots on the rehearsal. Her lines plus a synthesized music bed, ducked under the voice, went in as `narration_path`, so `highlight-agent demo` mixed and assembled the final MP4. Paths resolve relative to the manifest. [`examples/demo-plan-extended.json`](../examples/demo-plan-extended.json) is still a template for the three-minute final.
 
