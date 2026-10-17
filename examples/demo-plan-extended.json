@@ -1,0 +1,61 @@
+{
+  "source_path": "../data/rehearsal.mp4",
+  "max_duration_seconds": 180,
+  "scenes": [
+    {
+      "start_seconds": 0,
+      "end_seconds": 8,
+      "label": "Generated teaser"
+    },
+    {
+      "start_seconds": 20,
+      "end_seconds": 30,
+      "label": "Original source and indexing disclosure"
+    },
+    {
+      "start_seconds": 40,
+      "end_seconds": 62,
+      "label": "Make me look like a pro"
+    },
+    {
+      "start_seconds": 65,
+      "end_seconds": 80,
+      "label": "Clean landings playback"
+    },
+    {
+      "start_seconds": 95,
+      "end_seconds": 120,
+      "label": "Now roast my driving and changed selections"
+    },
+    {
+      "start_seconds": 180,
+      "end_seconds": 210,
+      "label": "One complete compilation"
+    },
+    {
+      "start_seconds": 130,
+      "end_seconds": 145,
+      "label": "Source evidence and optional revision"
+    },
+    {
+      "start_seconds": 220,
+      "end_seconds": 235,
+      "label": "Second original moment"
+    },
+    {
+      "start_seconds": 240,
+      "end_seconds": 255,
+      "label": "Human evaluation and implementation"
+    },
+    {
+      "start_seconds": 150,
+      "end_seconds": 167,
+      "label": "Actual trace and measured timings"
+    },
+    {
+      "start_seconds": 170,
+      "end_seconds": 178,
+      "label": "Download and closing"
+    }
+  ]
+}

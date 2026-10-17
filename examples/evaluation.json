@@ -1,0 +1,53 @@
+{
+  "video_id": "REPLACE_WITH_REGISTERED_VIDEO_ID",
+  "cases": [
+    {
+      "label": "crash",
+      "start_seconds": 10,
+      "end_seconds": 20,
+      "caption_correct": null,
+      "observed_label": null,
+      "notes": ""
+    },
+    {
+      "label": "crash",
+      "start_seconds": 40,
+      "end_seconds": 50,
+      "caption_correct": null,
+      "observed_label": null,
+      "notes": ""
+    },
+    {
+      "label": "clean_landing",
+      "start_seconds": 70,
+      "end_seconds": 80,
+      "caption_correct": null,
+      "observed_label": null,
+      "notes": ""
+    },
+    {
+      "label": "clean_landing",
+      "start_seconds": 100,
+      "end_seconds": 110,
+      "caption_correct": null,
+      "observed_label": null,
+      "notes": ""
+    },
+    {
+      "label": "ordinary",
+      "start_seconds": 130,
+      "end_seconds": 140,
+      "caption_correct": null,
+      "observed_label": null,
+      "notes": ""
+    },
+    {
+      "label": "ordinary",
+      "start_seconds": 160,
+      "end_seconds": 170,
+      "caption_correct": null,
+      "observed_label": null,
+      "notes": ""
+    }
+  ]
+}

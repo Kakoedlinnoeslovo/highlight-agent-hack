@@ -39,3 +39,7 @@ wandb/
 .DS_Store
 .idea/
 .vscode/
+.gstack/
+
+# Local workshop photos include access details.
+presentation/
