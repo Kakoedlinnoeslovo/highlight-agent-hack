@@ -5,7 +5,6 @@ const input = document.querySelector('#business');
 const go = document.querySelector('#cs-go');
 const results = document.querySelector('#results');
 const announcements = document.querySelector('#announcements');
-const initial = results.innerHTML;
 let data;
 let pending;
 let sequence = 0;
@@ -16,6 +15,7 @@ const weightedKeys = weights => Object.keys(weights).sort((a, b) => weights[b] -
 const counted = (frame, weights) => weightedKeys(weights).filter(key => frame.counts[key])
   .map(key => `${audience(key)} ×${frame.counts[key]}`).join(' · ');
 const validClip = clip => typeof clip === 'string' && /^\/media\/[a-zA-Z0-9_.-]+\.mp4$/.test(clip);
+const validPoster = poster => typeof poster === 'string' && /^\/previews\/[a-zA-Z0-9_.-]+\.jpg$/.test(poster);
 
 function announce(message) { announcements.textContent = message; }
 
@@ -30,6 +30,32 @@ function clearPlayback() {
 function replaceResults(html) {
   clearPlayback();
   results.innerHTML = html;
+}
+
+function renderInitial(sample) {
+  const cards = (sample?.corners || []).slice(0, 5).map((corner, index) => {
+    const preview = validPoster(corner.poster)
+      ? `<img src="${escape(corner.poster)}" alt="${escape(corner.camera)}: recorded street footage">`
+      : '<div class="cs-camera-placeholder" aria-hidden="true">⌖</div>';
+    return `<div class="cs-camera-card" style="--camera-index:${index}">${preview}
+      <div class="cs-camera-label"><b>${escape(corner.camera)}</b><span>Source preview</span></div></div>`;
+  }).join('');
+  return `<section class="cs-scene"><div class="cs-scene-copy">
+    <span class="cs-eyebrow cs-blue">A better place to start</span>
+    <h2>See who walks past.<br>Before you sign.</h2>
+    <p>Describe your business above. We’ll compare the audiences on these streets and show you the clips behind your shortlist.</p>
+    <div class="cs-scene-tags"><span>People</span><span>Vehicles</span><span>Animals</span></div></div>
+    <div class="cs-camera-stage"><div class="cs-stage-header"><span>SF STREETS</span><span>THE SOURCE FOOTAGE</span></div>
+    <div class="cs-stage-cards">${cards}</div><div class="cs-stage-footer"><span>Recorded footage · San Francisco</span><span aria-hidden="true">⌖</span></div></div>
+    <div class="cs-steps"><span><b>01</b> Describe your business</span><span><b>02</b> Compare the audiences</span><span><b>03</b> Watch the evidence</span></div></section>`;
+}
+
+function renderLoading(corners) {
+  const paths = corners.slice(0, 5).map((_, index) => `<path class="cs-beam-path" style="--order:${index}" d="M${60 + index * 120},24 Q300,24 300,132"/>`).join('');
+  const nodes = corners.slice(0, 5).map((corner, index) => `<span class="cs-scan-node" style="--order:${index}" title="${escape(corner.camera)}">${String(index + 1).padStart(2, '0')}</span>`).join('');
+  return `<section class="cs-scan-stage" role="status" aria-live="polite">
+    <div class="cs-scan-orbit" aria-hidden="true"><svg class="cs-beam-lines" viewBox="0 0 600 160" preserveAspectRatio="none">${paths}</svg>${nodes}<span class="cs-scan-core">⌖</span></div>
+    <div class="cs-scan-copy"><h3>Finding your business in the street.</h3><p>Matching audiences across your corners and preparing the evidence.</p></div></section>`;
 }
 
 function showError(error, loadingData = false) {
@@ -49,7 +75,7 @@ function reset() {
   go.textContent = 'Find my corner';
   go.disabled = !data;
   results.setAttribute('aria-busy', 'false');
-  replaceResults(initial);
+  replaceResults(renderInitial(data));
   announce('Search reset. Describe another business.');
   input.focus();
 }
@@ -59,7 +85,7 @@ function renderRecommendation(business, profile, weights, ranking, seconds) {
   const enough = hasEnoughEvidence(ranking, data.minFrames);
   const tied = ranking.filter(row => Math.abs(row.score - top.score) < 1e-9).map(row => row.corner.camera);
   const title = enough ? `Best corner: ${tied.join(' and ')}` : 'Not enough evidence to recommend a corner';
-  const chips = weightedKeys(weights).map(key => `<span class="cs-chip ${weights[key] >= data.coreThreshold ? 'cs-core' : ''}" title="${escape(profile.weights.find(item => item.key === key)?.why)}">${escape(audience(key))} · ${weights[key] >= data.coreThreshold ? 'core' : 'helpful'}</span>`).join('');
+  const chips = weightedKeys(weights).map((key, index) => `<span class="cs-chip ${weights[key] >= data.coreThreshold ? 'cs-core' : ''}" style="--order:${index}" title="${escape(profile.weights.find(item => item.key === key)?.why)}">${escape(audience(key))} · ${weights[key] >= data.coreThreshold ? 'core' : 'helpful'}</span>`).join('');
   const coreCounts = weightedKeys(weights).filter(key => weights[key] >= data.coreThreshold)
     .map(key => `${audience(key)} in ${top.seen[key] || 0}/${top.frames} frames`).join(' · ');
   return `<section class="cs-card cs-recommendation"><div class="cs-recommendation-main">
@@ -68,9 +94,10 @@ function renderRecommendation(business, profile, weights, ranking, seconds) {
     ${enough ? '' : `<p class="cs-muted">The best corner shows your core customers in only ${top.core_frames} of ${top.frames} sampled frames. At least ${data.minFrames} core-audience frames are needed.</p>`}
     <p class="cs-customers"><b>${escape(business)}</b> · ${escape(profile.customers)}</p><div class="cs-chips">${chips}</div>
     <p class="cs-counts">${escape(coreCounts)}</p></div>
-    <div class="cs-result-meta"><span class="cs-time">${seconds.toFixed(1)}s <span>this search</span></span>
-      <span class="cs-profile-model">${escape(profile.model ? `Profile: ${profile.model}` : 'Generated business profile')}<br>Ranked from cached observations</span>
-      <details class="cs-reasons"><summary>Why these audiences?</summary><ul>${profile.weights.map(item => `<li><b>${escape(audience(item.key))}:</b> ${escape(item.why)}</li>`).join('')}</ul></details>
+    <div class="cs-result-meta"><div class="cs-match"><span>Relative match</span><b>${Math.round(top.score * 100)}<small>/100</small></b></div>
+      <span class="cs-time">${seconds.toFixed(1)}s <span>this search</span></span>
+      <details class="cs-reasons"><summary>Why these audiences?</summary><ul>${profile.weights.map(item => `<li><b>${escape(audience(item.key))}:</b> ${escape(item.why)}</li>`).join('')}</ul>
+      <p class="cs-profile-model">${escape(profile.model ? `Profile: ${profile.model}` : 'Generated business profile')}<br>Ranked from cached observations</p></details>
     </div></section>`;
 }
 
@@ -81,7 +108,7 @@ function renderRanking(ranking, weights) {
       const mix = Object.entries(row.seen).filter(([key, count]) => count && Object.hasOwn(data.audiences, key))
         .sort((a, b) => b[1] - a[1]).slice(0, 5).map(([key, count]) => `${audience(key)} ${count}`).join(' · ');
       const wanted = weightedKeys(weights).map(key => `${audience(key)} in ${row.seen[key] || 0}/${row.frames}`).join(', ');
-      return `<div class="cs-ranking-row"><div class="cs-ranking-line"><span class="cs-rank">${String(index + 1).padStart(2, '0')}</span><b>${escape(row.corner.camera)}</b><span class="cs-score">${Math.round(row.score * 100)}<small>/100</small></span></div>
+      return `<div class="cs-ranking-row" style="--order:${index}"><div class="cs-ranking-line"><span class="cs-rank">${String(index + 1).padStart(2, '0')}</span><b>${escape(row.corner.camera)}</b><span class="cs-score">${Math.round(row.score * 100)}<small>/100</small></span></div>
         <div class="cs-track" aria-hidden="true"><div class="cs-fill" style="width:${row.score * 100}%"></div></div>
         <p class="cs-frame-count">Core audience in <b>${row.core_frames} of ${row.frames} sampled frames</b></p>
         <details><summary>Audience &amp; location details</summary><p>${escape(row.corner.headline)}<br>Recorded ${escape(row.corner.recorded)}</p>
@@ -93,7 +120,7 @@ function renderRanking(ranking, weights) {
 
 function renderEvidence(row, index, weights, enough) {
   const clips = row.best.filter(item => validClip(item.frame.clip));
-  return `<section class="cs-card cs-evidence" aria-labelledby="evidence-title-${index}">
+  return `<section class="cs-card cs-evidence" id="${index ? 'cs-runnerup' : 'cs-primary'}" aria-labelledby="evidence-title-${index}">
     <h3 id="evidence-title-${index}">${enough ? (index ? 'Runner-up evidence' : 'Primary evidence') : 'Limited evidence'} · ${escape(row.corner.camera)}</h3>
     ${clips.length ? `<video id="evidence-video-${index}" controls preload="metadata" playsinline aria-label="Recorded evidence at ${escape(row.corner.camera)}">Your browser does not support video playback.</video>
       <div class="cs-playlist"><button type="button" data-previous="${index}" aria-label="Previous evidence clip at ${escape(row.corner.camera)}">← Previous</button>
@@ -157,7 +184,7 @@ async function submit(event) {
   go.disabled = true;
   go.textContent = 'Scouting…';
   results.setAttribute('aria-busy', 'true');
-  replaceResults('<section class="cs-card cs-loading"><span class="cs-spinner" aria-hidden="true"></span><div><b>Scouting your corners…</b><p>Generating your audience profile and comparing the recorded sample.</p></div></section>');
+  replaceResults(renderLoading(data.corners));
   announce(`Scouting corners for ${business}.`);
   const started = performance.now();
   const timeout = setTimeout(() => controller.abort('timeout'), 90000);
@@ -174,9 +201,10 @@ async function submit(event) {
     if (!ranking.length) throw new Error('No corners are available in this scouting sample.');
     if (current !== sequence) return;
     const enough = hasEnoughEvidence(ranking, data.minFrames);
+    const evidenceRows = ranking.slice(0, enough ? 2 : 1);
     replaceResults(renderRecommendation(business, profile, weights, ranking, (performance.now() - started) / 1000)
-      + `<div id="cs-dashboard"><div class="cs-evidence-column">${ranking.slice(0, 2).map((row, index) => renderEvidence(row, index, weights, enough)).join('')}</div>${renderRanking(ranking, weights)}</div>`);
-    ranking.slice(0, 2).forEach((row, index) => wireEvidence(row, index, weights));
+      + `<div id="cs-dashboard">${renderEvidence(evidenceRows[0], 0, weights, enough)}${renderRanking(ranking, weights)}${evidenceRows[1] ? renderEvidence(evidenceRows[1], 1, weights, enough) : ''}</div>`);
+    evidenceRows.forEach((row, index) => wireEvidence(row, index, weights));
     document.querySelector('#result-title')?.focus({ preventScroll: true });
     announce(enough ? `Shortlist ready. Best corner: ${ranking[0].corner.camera}. ${ranking.length} corners compared.` : 'Search complete. Not enough evidence to recommend a corner.');
   } catch (error) {
@@ -210,6 +238,7 @@ async function loadData() {
     for (const business of data.examples || []) {
       const button = document.createElement('button');
       button.type = 'button';
+      button.className = 'gallery-item';
       button.textContent = business;
       button.addEventListener('click', () => {
         input.value = business;
@@ -219,7 +248,7 @@ async function loadData() {
       examples.append(button);
     }
     go.disabled = false;
-    replaceResults(initial);
+    replaceResults(renderInitial(data));
     announce(`${data.corners.length} recorded corners ready. Describe your business to compare them.`);
   } catch (error) { showError(error, true); announce('The scouting sample could not be loaded.'); }
 }

@@ -1,5 +1,5 @@
 {
-  "exportedAt": "2026-10-17T13:41:39.899509+00:00",
+  "exportedAt": "2026-10-17T13:57:33.551081+00:00",
   "audiences": {
     "office_worker": "Office workers",
     "tourist": "Tourists",
@@ -971,7 +971,8 @@
           "source": "20261001_094307_sf1_chunk_0005.mp4 @ 25.0\u201330.0 s",
           "clip": "/media/c0cc58e7-ebd565af296cb3b62428.mp4"
         }
-      ]
+      ],
+      "poster": "/previews/c0cc58e7d4da405eaf1e9bb01c83fa55-f05774b0b887.jpg"
     },
     {
       "id": "32f844ce3dc4472c9d4596ad8afe90a0",
@@ -1916,7 +1917,8 @@
           "source": "20261001_095333_sf2_chunk_0005.mp4 @ 25.0\u201330.0 s",
           "clip": "/media/32f844ce-8485167adabfd770c4d4.mp4"
         }
-      ]
+      ],
+      "poster": "/previews/32f844ce3dc4472c9d4596ad8afe90a0-2893f7d3ccb8.jpg"
     },
     {
       "id": "e0c631972aba476bac0ff947a04a3b61",
@@ -2861,7 +2863,8 @@
           "source": "20261001_100624_sf3_chunk_0005.mp4 @ 25.0\u201330.0 s",
           "clip": "/media/e0c63197-d2493787998f7c1ab1f7.mp4"
         }
-      ]
+      ],
+      "poster": "/previews/e0c631972aba476bac0ff947a04a3b61-5e50f076beba.jpg"
     },
     {
       "id": "7f1abfba5a5a4da98ffeaf40f3c99b55",
@@ -3806,7 +3809,8 @@
           "source": "20261001_100909_sf4_chunk_0005.mp4 @ 25.0\u201330.0 s",
           "clip": "/media/7f1abfba-090408fb987959c58378.mp4"
         }
-      ]
+      ],
+      "poster": "/previews/7f1abfba5a5a4da98ffeaf40f3c99b55-619d43994a52.jpg"
     },
     {
       "id": "096e3f61cb8540a0b011b489ea48de62",
@@ -4751,7 +4755,8 @@
           "source": "20261006_123753_sf5_chunk_0005.mp4 @ 25.0\u201330.0 s",
           "clip": "/media/096e3f61-5cb4eb646507d44821d6.mp4"
         }
-      ]
+      ],
+      "poster": "/previews/096e3f61cb8540a0b011b489ea48de62-5c9f00875b47.jpg"
     }
   ]
 }

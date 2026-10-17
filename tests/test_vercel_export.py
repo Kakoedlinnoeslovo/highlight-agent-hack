@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import importlib
 import json
@@ -19,7 +20,10 @@ from highlight_agent.service import ServiceError
 @pytest.fixture
 def exporter(monkeypatch):
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "scripts"))
-    return importlib.import_module("export_vercel")
+    module = importlib.import_module("export_vercel")
+    # Source-preview generation has separate tests; exporter fixtures are not real MP4 files.
+    monkeypatch.setattr(module.scout, "corner_previews", lambda *_: [])
+    return module
 
 
 def corner(tmp_path):
@@ -71,6 +75,60 @@ def test_export_publishes_matching_clips_and_removes_only_stale_managed_media(
     assert not stale.exists()
     assert unrelated.exists()
     assert json.loads((site / "lib" / "profile-config.json").read_text())["named"]
+    assert payload["corners"][0]["poster"] == ""
+    assert (site / "public" / "scout_motion.css").read_bytes() == (
+        exporter.ROOT / "scripts" / "scout_motion.css"
+    ).read_bytes()
+
+
+def test_export_publishes_verified_posters_without_private_source_paths(
+    exporter, monkeypatch, tmp_path,
+):
+    item = corner(tmp_path)
+    image = b"verified source preview JPEG"
+    monkeypatch.setattr(exporter.scout, "load_corners", lambda _: [item])
+    monkeypatch.setattr(exporter.scout.city, "_source_ref", lambda *_: "chunk.mp4 @ 0–5 s")
+    monkeypatch.setattr(exporter, "export_clip", lambda *args: args[-1].write_bytes(b"clip"))
+    calls = []
+
+    def previews(service, corners):
+        calls.append(corners)
+        return [{
+            "camera": "Camera 1", "headline": "Street",
+            "poster": "data:image/jpeg;base64," + base64.b64encode(image).decode(),
+        }]
+
+    monkeypatch.setattr(exporter.scout, "corner_previews", previews)
+
+    site = tmp_path / "web"
+    payload = exporter.export_site(site)
+
+    expected = f"/previews/{item['video'].id}-{item['video'].content_sha256[:12]}.jpg"
+    assert payload["corners"][0]["poster"] == expected
+    assert (site / "public" / expected.lstrip("/")).read_bytes() == image
+    assert calls == [[item]]
+    serialized = (site / "public" / "corners.json").read_text()
+    assert str(tmp_path) not in serialized
+    assert "private-source" not in serialized
+    assert "base64" not in serialized
+    assert not list((site / "public" / "previews").glob("*.tmp.jpg"))
+
+
+@pytest.mark.parametrize("poster", ["", "data:image/jpeg;base64,not-valid-base64!"])
+def test_missing_or_unusable_thumbnail_does_not_block_snapshot_publication(
+    exporter, monkeypatch, tmp_path, poster,
+):
+    item = corner(tmp_path)
+    monkeypatch.setattr(exporter.scout, "load_corners", lambda _: [item])
+    monkeypatch.setattr(exporter, "export_clip", lambda *args: args[-1].write_bytes(b"clip"))
+    monkeypatch.setattr(exporter.scout, "corner_previews", lambda *_: [{"poster": poster}])
+
+    site = tmp_path / "web"
+    payload = exporter.export_site(site)
+
+    assert payload["corners"][0]["poster"] == ""
+    assert (site / "public" / "corners.json").is_file()
+    assert not (site / "public" / "previews").exists()
 
 
 def test_export_rejects_changed_source_before_encoding(exporter, monkeypatch, tmp_path):
@@ -78,9 +136,13 @@ def test_export_rejects_changed_source_before_encoding(exporter, monkeypatch, tm
     item["video"].local_path.write_bytes(b"changed video")
     monkeypatch.setattr(exporter.scout, "load_corners", lambda _: [item])
     monkeypatch.setattr(exporter, "export_clip", lambda *_: pytest.fail("Encoded changed source"))
+    monkeypatch.setattr(
+        exporter.scout, "corner_previews", lambda *_: pytest.fail("Previewed changed source")
+    )
     with pytest.raises(ServiceError, match="changed"):
         exporter.export_site(tmp_path / "web")
     assert not (tmp_path / "web" / "public" / "corners.json").exists()
+    assert not (tmp_path / "web" / "public" / "previews").exists()
 
 
 def test_export_requires_a_segment_reference(exporter, monkeypatch, tmp_path):

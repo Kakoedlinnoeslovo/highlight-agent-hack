@@ -7,6 +7,7 @@ snapshot and normalized segment clips are exported; credentials and local paths 
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import math
@@ -18,6 +19,7 @@ from pathlib import Path
 
 import corner_scout as scout
 
+from highlight_agent.models import VideoRecord
 from highlight_agent.service import HighlightService
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -42,6 +44,33 @@ def export_clip(source: Path, start: float, end: float, destination: Path) -> No
         temporary.replace(destination)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def _publish_poster(video: VideoRecord, uri: str, public: Path) -> str:
+    """Publish an optional still already verified by ``corner_previews``."""
+    prefix = "data:image/jpeg;base64,"
+    if not isinstance(uri, str) or not uri.startswith(prefix):
+        return ""
+    temporary = None
+    try:
+        image = base64.b64decode(uri[len(prefix):], validate=True)
+        if not image:
+            return ""
+        fingerprint = video.content_sha256[:12] or str(video.local_path.stat().st_mtime_ns)
+        destination = public / "previews" / f"{video.id}-{fingerprint}.jpg"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        temporary = destination.with_suffix(".tmp.jpg")
+        temporary.write_bytes(image)
+        temporary.replace(destination)
+        return f"/previews/{destination.name}"
+    except (OSError, ValueError):
+        return ""
+    finally:
+        if temporary is not None:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
 
 
 def export_site(destination: Path, workers: int = 4) -> dict:
@@ -93,6 +122,10 @@ def export_site(destination: Path, workers: int = 4) -> dict:
         })
     with ThreadPoolExecutor(max_workers=workers) as pool:
         list(pool.map(lambda job: export_clip(*job), jobs))
+    previews = scout.corner_previews(service, corners)
+    for index, item in enumerate(exported):
+        uri = previews[index].get("poster", "") if index < len(previews) else ""
+        item["poster"] = _publish_poster(corners[index]["video"], uri, public)
     payload = {
         "exportedAt": datetime.now(UTC).isoformat(),
         "audiences": {key: label for key, (label, _) in scout.AUDIENCES.items()},
@@ -106,6 +139,7 @@ def export_site(destination: Path, workers: int = 4) -> dict:
         "coreThreshold": scout.CORE, "system": scout.PROFILE_SYSTEM,
         "schema": scout.BusinessProfile.model_json_schema(),
     }, indent=2) + "\n")
+    (public / "scout_motion.css").write_bytes((ROOT / "scripts" / "scout_motion.css").read_bytes())
     # Publish only after every clip exists, and remove old clips produced by this exporter.
     temporary = public / "corners.tmp.json"
     temporary.write_text(json.dumps(payload, indent=2) + "\n")
