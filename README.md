@@ -97,12 +97,12 @@ flowchart LR
     Text --> Profile["Core + helpful audiences"]
     Cache --> Rank["Deterministic ranking + evidence gate"]
     Profile --> Rank
-    Rank --> Hosted["Web: exported clip playlist"]
+    Rank --> Hosted["Web: sampled frames + context clips"]
     Rank --> Local["Local: FFmpeg evidence reels"]
     Import --> Local
 ```
 
-The import and vision pass run ahead of time. Each hosted request calls `/api/profile` for a fresh audience profile, then the browser ranks the exported observations. VAST access, full source recordings, FFmpeg, and Weave are used by the local workflows; the hosted runtime uses the checked-in snapshot and clips.
+The import and vision pass run ahead of time. Each hosted request calls `/api/profile` for a fresh audience profile, then the browser ranks the exported observations. VAST access, full source recordings, FFmpeg, and Weave are used by the local workflows; the hosted runtime uses the checked-in snapshot, sampled images, and clips.
 
 <details>
 <summary><strong>How scoring, abstention, and source references work</strong></summary>
@@ -219,17 +219,17 @@ The saved text-model runs used `meta-llama/Llama-3.3-70B-Instruct`; choose a mod
 
 | Path | Purpose |
 | --- | --- |
-| [`web/`](web/) | Node API, static UI, scoring tests, exported observations, evidence clips, and Vercel config |
+| [`web/`](web/) | Node API, static UI, scoring tests, exported observations, sampled images, evidence clips, and Vercel config |
 | [`scripts/corner_scout.py`](scripts/corner_scout.py) | Local business profiling, ranking, evidence rendering, and Gradio UI |
 | [`scripts/vision_tags.py`](scripts/vision_tags.py) | Cached vision observations from sampled source frames |
-| [`scripts/export_vercel.py`](scripts/export_vercel.py) | Export the observations and short clips for the hosted app |
+| [`scripts/export_vercel.py`](scripts/export_vercel.py) | Export observations, sampled images, and short clips for the hosted app |
 | [`scripts/business_report.py`](scripts/business_report.py), [`scripts/city_report.py`](scripts/city_report.py) | Caption-based comparison reports and camera summaries |
 | [`highlight_agent/`](highlight_agent/) | Shared CLI, provider adapters, contracts, storage, selection, evaluation, and rendering |
 | [`app.py`](app.py) | Conversational highlight editor on port 7860; Corner Scout uses port 7861 |
 | [`tests/`](tests/), [`examples/`](examples/) | Python checks and editable evaluation/demo templates |
 | [`docs/GUIDE.md`](docs/GUIDE.md) | Full setup, deployment, reports, outputs, evaluation, and rehearsal instructions |
 
-Local `data/` and `outputs/` are ignored. Keep full footage, manifests, renders, traces, and `.env` out of Git; the exported snapshot and short clips under `web/public/` are intentionally checked in.
+Local `data/` and `outputs/` are ignored. Keep full footage, manifests, renders, traces, and `.env` out of Git; the exported snapshot, sampled images, and short clips under `web/public/` are intentionally checked in.
 
 ## Help and contributions
 
