@@ -17,6 +17,14 @@ with ranked results and playable source clips.
 
 </div>
 
+<p align="center">
+  <a href="docs/assets/corner-scout-demo.mp4"><img src="docs/assets/corner-scout-demo.gif" width="800" alt="Corner Scout demo: a presenter introduces the app, a one-click dog grooming salon search picks dogs as the core customers and ranks Camera 5 first with dogs in 3 of 36 frames, then the evidence and ranking appear"></a>
+  <br>
+  <a href="docs/assets/corner-scout-demo.mp4"><strong>▶ Watch the 82-second demo with sound</strong></a>
+  <br>
+  <sub>Real searches in the web app, recorded in one take before the UI redesign: dog grooming salon, luxury car detailing, a kids' toy store it refuses to recommend, and why frames beat caption words. The presenter is AI-generated (Nano Banana Pro portrait, voiced and lip-synced with Veo 3.1) and the music was synthesized for this video. <a href="docs/GUIDE.md#the-demo-uses-the-same-renderer">How it was made</a>.</sub>
+</p>
+
 > **In 30 seconds:** Opening a shop is a bet on a corner. Corner Scout samples street footage, estimates which audiences appear, and matches them to a business description. A vision model reads the frames; a text model identifies core and helpful audiences; application code ranks the corners. Every recommendation links to video evidence. When the best corner has fewer than three frames showing a core audience, it says **“Not enough evidence.”**
 
 | **5 corners** | **15 minutes** | **180 observations** | **3-frame minimum** |
