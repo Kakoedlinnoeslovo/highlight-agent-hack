@@ -775,12 +775,187 @@ def test_cleanup_failure_keeps_persisted_recording_in_imported_and_playable_tota
     service._verify_source(service.list_videos()[0])
 
 
-def test_full_recording_readiness_allows_one_frame_of_normalization_rounding(tmp_path, dataset_media):
+@pytest.mark.parametrize("direction", [-1, 1])
+def test_full_recording_readiness_allows_one_frame_of_normalization_rounding(tmp_path, dataset_media, direction):
     provider = DatasetProvider(dataset_media)
     service = make_service(tmp_path, provider)
     video = service.import_dataset_source(provider.originals[0])
     rows = service.indexed_segments(video.id)
-    rows[1]["start_seconds"] += 1 / 30
+    rows[1]["start_seconds"] += direction / 30
     rows[-1]["end_seconds"] -= 1 / 30
 
     assert service._with_index_status(video, rows).index_status == "ready"
+
+
+@pytest.mark.parametrize("change", ["changed_membership", "new_recording"])
+def test_single_import_refreshes_full_membership_for_editor_and_scout_without_shrinking_coverage(
+    tmp_path, dataset_media, monkeypatch, change,
+):
+    import importlib
+    from copy import deepcopy
+
+    from app import build_app
+    from highlight_agent.storage import read_json, write_json
+
+    provider = DatasetProvider(dataset_media)
+    first = provider.source
+    first.update(stream_id="first-stream", camera_id="sf_streets_cam-5",
+                 location="san_francisco", capture_type="streets", segment_count=2)
+    for index, chunk in enumerate(first["chunks"]):
+        chunk.update(chunk_index=index, segment_count=1)
+    second = deepcopy(first)
+    second.update(stream_id="second-stream", camera_id="sf_streets_cam-4")
+    for index, chunk in enumerate(second["chunks"]):
+        chunk["original_video"] = f"s3://supplied/second/chunk-{index}.mp4"
+        provider.paths[chunk["original_video"]] = dataset_media[index]
+    second["original_video"] = second["chunks"][0]["original_video"]
+    sources = [first, second]
+    def discover():
+        provider.list_calls += 1
+        provider.dataset_inventory = [
+            {"original_video": chunk["original_video"], "is_public": True,
+             **{key: source[key] for key in ("stream_id", "camera_id", "location", "capture_type")},
+             "chunk_index": chunk["chunk_index"], "chunk_duration_sec": chunk["duration"],
+             "total_segments": chunk["segment_count"],
+             "timeline": [{"segment_start_sec": 0, "segment_end_sec": chunk["duration"],
+                           "reasoning_content": "Supplied caption"}]}
+            for source in sources for chunk in source["chunks"]
+        ]
+        return sources
+    provider.dataset_sources = discover
+    service = make_service(tmp_path, provider)
+    missing = "s3://supplied/not-currently-indexed/chunk.mp4"
+    write_json(service.config.output_dir / "validation/public-dataset-inventory.json", {
+        "chunks": [{"original_video": missing, "stream_id": "missing-stream",
+                    "chunk_duration_sec": 30, "total_segments": 6}],
+    })
+    old_first = service.import_dataset_source(first["original_video"])
+    unrelated = service.import_dataset_source(second["original_video"])
+    inventory_path = service.config.data_dir / "catalog/inventory.json"
+    previous_inventory = read_json(inventory_path)
+    if change == "changed_membership":
+        first["chunks"][0]["duration"] = 0.3
+        selected = first
+        expected_visible = {unrelated.id}
+    else:
+        selected = deepcopy(first)
+        selected["stream_id"] = "new-stream"
+        for index, chunk in enumerate(selected["chunks"]):
+            chunk["original_video"] = f"s3://supplied/new/chunk-{index}.mp4"
+            provider.paths[chunk["original_video"]] = dataset_media[index]
+        selected["original_video"] = selected["chunks"][0]["original_video"]
+        sources.append(selected)
+        expected_visible = {old_first.id, unrelated.id}
+
+    imported = service.import_dataset_source(selected["original_video"])
+
+    # Also repair a stale snapshot when the successful recording is already cached.
+    write_json(inventory_path, previous_inventory)
+    downloads = len(provider.downloads)
+    assert service.import_dataset_source(selected["original_video"]).id == imported.id
+    assert len(provider.downloads) == downloads
+    refreshed = read_json(inventory_path)
+    expected_visible.add(imported.id)
+    before_build = provider.list_calls
+    editor = build_app(service)
+    picker = next(item for item in editor.blocks.values()
+                  if getattr(item, "label", None) == "Source recording")
+    assert {value for _, value in picker.choices} == expected_visible
+    assert provider.list_calls == before_build
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "scripts"))
+    city = importlib.import_module("city_report")
+    assert {video.id for video in city.preferred_recordings(service)} == expected_visible
+    assert refreshed["expected"]["recordings"] == len(sources) + 1
+    assert refreshed["expected"]["chunks"] == 2 * len(sources) + 1
+    assert refreshed["expected"]["segments"] == 2 * len(sources) + 6
+    assert refreshed["missing_sources"] == [missing]
+    assert len(refreshed["chunks"]) == 2 * len(sources)
+    assert {row["stream_id"] for row in refreshed["chunks"]} == {row["stream_id"] for row in sources}
+    assert service.get_video(old_first.id) == old_first
+
+
+def test_failed_single_import_preserves_the_previous_inventory_snapshot(tmp_path, dataset_media):
+    provider = DatasetProvider(dataset_media)
+    service = make_service(tmp_path, provider)
+    original = service.import_dataset_source(provider.originals[0])
+    inventory = service.config.data_dir / "catalog/inventory.json"
+    previous = inventory.read_bytes()
+    provider.source["chunks"][0]["duration"] = 0.3
+    provider.fail_segments_at = 2
+
+    with pytest.raises(ProviderError):
+        service.import_dataset_source(provider.originals[0])
+
+    assert inventory.read_bytes() == previous
+    assert service.get_video(original.id) == original
+
+
+def test_full_import_rejects_overlapping_caption_intervals_before_publication(tmp_path, dataset_media):
+    provider = DatasetProvider(dataset_media)
+    service = make_service(tmp_path, provider)
+    real_segments = provider.segments
+    def overlapping_segments(video):
+        rows = real_segments(video)
+        rows[1]["start_seconds"] = rows[0]["end_seconds"] - 0.3
+        return rows
+    provider.segments = overlapping_segments
+
+    with pytest.raises(ServiceError, match="not completely indexed"):
+        service.import_dataset_source(provider.originals[0])
+
+    assert_no_published_import(service)
+    assert all(path.is_file() for _, path in provider.downloads)
+
+
+def test_concurrent_imports_keep_shared_prepared_chunks_alive_until_staging(
+    tmp_path, dataset_media, monkeypatch,
+):
+    import sys
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    from copy import deepcopy
+
+    first_provider = DatasetProvider(dataset_media)
+    second_provider = DatasetProvider(dataset_media)
+    second_provider.source = deepcopy(second_provider.source)
+    extra = "s3://supplied/expanded/chunk-2.mp4"
+    second_provider.source["chunks"].append({"original_video": extra, "duration": 0.6})
+    second_provider.paths[extra] = dataset_media[0]
+    first = make_service(tmp_path, first_provider)
+    second = make_service(tmp_path, second_provider)
+    checkpoint_ready, allow_staging, second_preparing = (threading.Event() for _ in range(3))
+    real_prepare = HighlightService._prepare_dataset_chunk
+    def prepare(service, chunk, *args):
+        if service is second:
+            second_preparing.set()
+        result = real_prepare(service, chunk, *args)
+        if service is first and chunk["original_video"] == first_provider.originals[0]:
+            checkpoint_ready.set()
+            assert allow_staging.wait(10), "The test did not release import staging"
+        return result
+    monkeypatch.setattr(HighlightService, "_prepare_dataset_chunk", prepare)
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        first_job = workers.submit(first.import_dataset_source, first_provider.originals[0])
+        try:
+            assert checkpoint_ready.wait(10)
+            # An independent process must also observe the import lifetime lock.
+            check = subprocess.run([sys.executable, "-c",
+                "import fcntl,sys\n"
+                "with open(sys.argv[1], 'ab') as handle:\n"
+                " try: fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)\n"
+                " except BlockingIOError: sys.exit(0)\n"
+                " sys.exit(1)\n", str(first.config.data_dir / "catalog/import.lock")],
+                capture_output=True, timeout=5)
+            assert check.returncode == 0
+            second_job = workers.submit(second.import_dataset_source, second_provider.originals[0])
+            assert not second_preparing.wait(0.2)
+        finally:
+            allow_staging.set()
+        earlier, expanded = first_job.result(timeout=20), second_job.result(timeout=20)
+    assert earlier.id != expanded.id
+    assert len(earlier.source_chunks) == 2 and len(expanded.source_chunks) == 3
+    first._verify_source(earlier)
+    second._verify_source(expanded)
+    assert len(first_provider.downloads) == 2
+    assert len(second_provider.downloads) == 1
+    assert probe_media(expanded.local_path).duration == pytest.approx(2.0, abs=0.04)

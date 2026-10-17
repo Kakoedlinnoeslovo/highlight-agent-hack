@@ -12,6 +12,7 @@ import tempfile
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -198,6 +199,53 @@ class HighlightService:
         ]
         return hashlib.sha256(json.dumps(membership, sort_keys=True).encode()).hexdigest()
 
+    @contextmanager
+    def _dataset_import_lock(self):
+        """Keep shared download/preparation checkpoints alive across CLI and UI imports."""
+        import fcntl
+
+        path = self.config.data_dir / "catalog" / "import.lock"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("ab") as handle:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle, fcntl.LOCK_UN)
+
+    @staticmethod
+    def _dataset_totals(recordings: list[dict]) -> dict:
+        return {"recordings": len(recordings),
+                "chunks": sum(len(item["chunks"]) for item in recordings),
+                "segments": sum(item.get("segment_count", 0) for item in recordings),
+                "duration_seconds": sum(sum(chunk["duration"] for chunk in item["chunks"])
+                                        for item in recordings)}
+
+    def _save_dataset_inventory(self, sources: list[dict]) -> tuple[dict, list[dict]]:
+        """Publish one full discovery snapshot under the catalog import lock."""
+        catalog_dir = self.config.data_dir / "catalog"
+        inventory = {"dataset": "hackathon-public", "sources": sources, "recordings": sources,
+                     "chunks": getattr(self._vast_client(), "dataset_inventory", []),
+                     "captured_at": datetime.now(UTC).isoformat(),
+                     "baseline": {"chunks": 612, "recordings": 55, "segments": 3537}}
+        originals = [chunk["original_video"] for source in sources for chunk in source["chunks"]]
+        if len(originals) != len(set(originals)):
+            raise ServiceError("A supplied chunk appears in more than one recording.")
+        expected = self._dataset_totals(sources)
+        baseline_path = self.config.output_dir / "validation" / "public-dataset-inventory.json"
+        baseline_chunks = read_json(baseline_path).get("chunks", []) if baseline_path.exists() else []
+        discovered_originals = set(originals)
+        missing = [chunk for chunk in baseline_chunks if chunk["original_video"] not in discovered_originals]
+        expected["chunks"] += len(missing)
+        expected["segments"] += sum(chunk["total_segments"] for chunk in missing)
+        expected["duration_seconds"] += sum(chunk["chunk_duration_sec"] for chunk in missing)
+        discovered_streams = {source.get("stream_id") for source in sources}
+        expected["recordings"] += len({chunk["stream_id"] for chunk in missing} - discovered_streams)
+        inventory["missing_sources"] = [chunk["original_video"] for chunk in missing]
+        inventory["expected"] = expected
+        write_json(catalog_dir / "inventory.json", inventory)
+        return inventory, missing
+
     def _prepare_dataset_chunk(self, chunk: dict, video_id: str,
                                previous: SourceChunk | None = None) -> tuple[Path, SourceChunk]:
         """Keep verified download and normalization checkpoints across interrupted imports."""
@@ -260,11 +308,24 @@ class HighlightService:
         )
 
     def import_dataset_source(self, original_video: str, source: dict | None = None) -> VideoRecord:
-        """Import an immutable full recording using supplied captions and resumable media caches."""
+        """Import one recording without exposing shared checkpoint races.
+
+        ``source`` is a bulk optimization: its complete discovery snapshot must
+        already be saved. UI and CLI single imports omit it to refresh inventory.
+        """
         if self.config.mode != "live":
             raise ServiceError("The supplied public dataset requires live mode.")
+        with self._dataset_import_lock():
+            return self._import_dataset_source(original_video, source)
+
+    def _import_dataset_source(self, original_video: str, source: dict | None = None) -> VideoRecord:
+        """The caller holds the process-safe catalog lock through staging and cleanup."""
+        if self.config.mode != "live":
+            raise ServiceError("The supplied public dataset requires live mode.")
+        discovered = None
         if source is None:
-            source = next((item for item in self.dataset_sources()
+            discovered = self.dataset_sources()
+            source = next((item for item in discovered
                            if item["original_video"] == original_video), None)
         if source is None or source.get("original_video") != original_video or not source.get("chunks"):
             raise ServiceError("Choose a recording from the supplied public dataset.")
@@ -276,6 +337,8 @@ class HighlightService:
                 self._verify_source(cached)
                 rows = self.indexed_segments(cached.id)
                 if self._with_index_status(cached, rows).index_status == "ready":
+                    if discovered is not None:
+                        self._save_dataset_inventory(discovered)
                     return cached
             except ServiceError:
                 pass
@@ -330,6 +393,8 @@ class HighlightService:
             assembled.replace(destination)
         write_json(self._index_path(video.id), rows)
         saved = self._save_video(video)
+        if discovered is not None:
+            self._save_dataset_inventory(discovered)
         # The complete recording and caption index are durable now. Original
         # downloads remain recoverable; redundant prepared chunks can be rebuilt.
         for normalized, _ in prepared:
@@ -338,6 +403,11 @@ class HighlightService:
         return saved
 
     def release_dataset_originals(self, video: VideoRecord) -> dict:
+        """Serialize raw cleanup with imports that may still need those checkpoints."""
+        with self._dataset_import_lock():
+            return self._release_dataset_originals(video)
+
+    def _release_dataset_originals(self, video: VideoRecord) -> dict:
         """Release verified raw cache copies once the indexed recording is durable.
 
         VAST retains the originals. Local hash metadata remains an integrity
@@ -391,34 +461,11 @@ class HighlightService:
         from .media import MediaError
         from .vast import ProviderError
 
-        sources = self.dataset_sources()
+        with self._dataset_import_lock():
+            sources = self.dataset_sources()
+            inventory, missing = self._save_dataset_inventory(sources)
+        expected = inventory["expected"]
         catalog_dir = self.config.data_dir / "catalog"
-        inventory = {"dataset": "hackathon-public", "sources": sources, "recordings": sources,
-                     "chunks": getattr(self._vast_client(), "dataset_inventory", []),
-                     "captured_at": datetime.now(UTC).isoformat(),
-                     "baseline": {"chunks": 612, "recordings": 55, "segments": 3537}}
-        originals = [chunk["original_video"] for source in sources for chunk in source["chunks"]]
-        if len(originals) != len(set(originals)):
-            raise ServiceError("A supplied chunk appears in more than one recording.")
-        def totals(recordings):
-            return {"recordings": len(recordings),
-                    "chunks": sum(len(item["chunks"]) for item in recordings),
-                    "segments": sum(item.get("segment_count", 0) for item in recordings),
-                    "duration_seconds": sum(sum(chunk["duration"] for chunk in item["chunks"])
-                                            for item in recordings)}
-        expected = totals(sources)
-        baseline_path = self.config.output_dir / "validation" / "public-dataset-inventory.json"
-        baseline_chunks = read_json(baseline_path).get("chunks", []) if baseline_path.exists() else []
-        discovered_originals = set(originals)
-        missing = [chunk for chunk in baseline_chunks if chunk["original_video"] not in discovered_originals]
-        expected["chunks"] += len(missing)
-        expected["segments"] += sum(chunk["total_segments"] for chunk in missing)
-        expected["duration_seconds"] += sum(chunk["chunk_duration_sec"] for chunk in missing)
-        discovered_streams = {source.get("stream_id") for source in sources}
-        expected["recordings"] += len({chunk["stream_id"] for chunk in missing} - discovered_streams)
-        inventory["missing_sources"] = [chunk["original_video"] for chunk in missing]
-        inventory["expected"] = expected
-        write_json(catalog_dir / "inventory.json", inventory)
         imported = []
         playable = []
         failures = [{"stream_id": chunk.get("stream_id"),
@@ -428,9 +475,9 @@ class HighlightService:
         report = {}
         def save():
             nonlocal report
-            measured = totals(imported)
+            measured = self._dataset_totals(imported)
             measured["duration_seconds"] = sum(video.duration for _, video in completed)
-            playback = totals(playable)
+            playback = self._dataset_totals(playable)
             playback["duration_seconds"] = measured["duration_seconds"]
             report = {"dataset": "hackathon-public", "expected": expected,
                       "imported": measured, "playable": playback,
@@ -511,7 +558,7 @@ class HighlightService:
         coverage = 0.0
         gap = False
         for start, end in windows:
-            if start > coverage + tolerance:
+            if start > coverage + tolerance or (full_dataset and start < coverage - tolerance):
                 gap = True
             coverage = max(coverage, end)
         totals = {int(row["total_segments"]) for row in rows if row.get("total_segments")}
