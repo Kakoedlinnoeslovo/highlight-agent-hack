@@ -1,11 +1,14 @@
 import { createServer } from 'node:http';
 import { createReadStream } from 'node:fs';
-import { stat } from 'node:fs/promises';
+import { stat, access } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import profile from './api/profile.mjs';
 
 const root = fileURLToPath(new URL('./public/', import.meta.url));
+const workspace = fileURLToPath(new URL('../', import.meta.url));
+const recordingRoot = path.resolve(workspace, process.env.HIGHLIGHT_OUTPUT_DIR || 'outputs', 'collection/media');
+const imageRoot = path.resolve(workspace, process.env.HIGHLIGHT_OUTPUT_DIR || 'outputs', 'collection/images');
 const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css',
   '.js': 'text/javascript', '.json': 'application/json', '.mp4': 'video/mp4',
   '.svg': 'image/svg+xml', '.jpg': 'image/jpeg' };
@@ -18,12 +21,20 @@ createServer(async (request, response) => {
       response.writeHead(405, { Allow: 'GET, HEAD' }).end();
       return;
     }
-    const filename = path.resolve(root, '.' + decodeURIComponent(
+    let filename = path.resolve(root, '.' + decodeURIComponent(
       url.pathname === '/' ? '/index.html' : url.pathname,
     ));
     if (!filename.startsWith(root)) {
       response.writeHead(404).end();
       return;
+    }
+    if (/^\/recordings\/[a-f0-9]{64}\.mp4$/.test(url.pathname)) {
+      filename = path.join(recordingRoot, path.basename(url.pathname));
+    } else if (/^\/recording-images\/[a-f0-9]{64}\.jpg$/.test(url.pathname)) {
+      filename = path.join(imageRoot, path.basename(url.pathname));
+    } else if (url.pathname === '/catalog.json' || url.pathname === '/corners.json') {
+      const local = path.join(root, path.basename(url.pathname, '.json') + '.local.json');
+      try { await access(local); filename = local; } catch { /* Use the hosted snapshot. */ }
     }
     const info = await stat(filename);
     if (!info.isFile()) {

@@ -24,6 +24,7 @@ import gradio as gr
 
 from highlight_agent.briefs import STREET_PEOPLE_BRIEF, STREET_REVISION, STREET_TRAFFIC_BRIEF
 from highlight_agent.service import HighlightService
+from highlight_agent.storage import read_json
 
 PRO_BRIEF = "Make me look like a pro."
 ROAST_BRIEF = "Now roast my driving."
@@ -176,10 +177,10 @@ def _provenance(status: dict[str, Any]) -> str:
         names = ", ".join(_escape(item) for item in missing)
         return (
             '<div class="ha-provenance"><strong>LIVE MODE · SETUP NEEDED</strong> · Configure '
-            f"{names}. Browse the supplied SF Streets dataset after connecting VAST.</div>"
+            f"{names}. Browse the supplied hackathon collection after connecting VAST.</div>"
         )
     return (
-        '<div class="ha-provenance"><strong>LIVE MODE · SF STREETS</strong> · Supplied dataset footage '
+        '<div class="ha-provenance"><strong>LIVE MODE · HACKATHON COLLECTION</strong> · Supplied dataset footage '
         "· VAST caption search · W&amp;B query and ranking. Evidence and trace links appear after an actual run.</div>"
     )
 
@@ -196,9 +197,47 @@ def _video_metadata(video: Any | None) -> str:
     )
 
 
-def _source_library(videos: list[Any], *, offline: bool) -> list[Any]:
-    """Keep earlier personal recordings out of the supplied dataset experience."""
-    return videos if offline else [item for item in videos if _get(item, "dataset") == "sf-streets"]
+def _current_dataset_sources(service: Any) -> list[dict] | None:
+    """Read current membership locally; constructing the editor never browses VAST."""
+    data_dir = _get(_get(service, "config"), "data_dir")
+    if data_dir is None:
+        return None
+    try:
+        inventory = read_json(Path(data_dir) / "catalog" / "inventory.json")
+        sources = inventory.get("sources", inventory.get("recordings"))
+        return sources if isinstance(sources, list) else None
+    except (OSError, ValueError):
+        return None
+
+
+def _source_library(videos: list[Any], *, offline: bool,
+                    current_sources: list[dict] | None = None) -> list[Any]:
+    """Prefer current complete imports while keeping unsuperseded legacy sources."""
+    if offline:
+        return videos
+    full = [item for item in videos if _get(item, "dataset") == "hackathon-public"]
+    if current_sources is not None:
+        signatures = {HighlightService.dataset_import_signature(source) for source in current_sources}
+        memberships = {(source.get("stream_id"), tuple(chunk["original_video"]
+                       for chunk in source["chunks"])) for source in current_sources}
+        full = [item for item in full if (
+            _get(item, "import_signature") in signatures if _get(item, "import_signature") else
+            (_get(item, "stream_id"), tuple(_get(chunk, "original_video")
+             for chunk in (_get(item, "source_chunks") or []))) in memberships
+        )]
+    covered = {_get(chunk, "original_video") for item in full
+               for chunk in (_get(item, "source_chunks") or [])}
+    covered.update(_get(item, "original_video") for item in full if _get(item, "original_video"))
+    legacy = []
+    for item in videos:
+        if _get(item, "dataset") != "sf-streets":
+            continue
+        originals = {_get(chunk, "original_video") for chunk in (_get(item, "source_chunks") or [])}
+        if _get(item, "original_video"):
+            originals.add(_get(item, "original_video"))
+        if not originals.intersection(covered):
+            legacy.append(item)
+    return full + legacy
 
 
 def _timeline(
@@ -341,7 +380,11 @@ def build_app(service: HighlightService | None = None) -> gr.Blocks:
     service = service or HighlightService()
     status = service.status()
     offline = status.get("mode") == "offline_sample"
-    videos = _source_library(service.list_videos(), offline=offline)
+    def available_sources() -> list[Any]:
+        return _source_library(service.list_videos(), offline=offline,
+                               current_sources=None if offline else _current_dataset_sources(service))
+
+    videos = available_sources()
     first = videos[0] if videos else None
     first_brief = PRO_BRIEF if offline else STREET_PEOPLE_BRIEF
     second_brief = ROAST_BRIEF if offline else STREET_TRAFFIC_BRIEF
@@ -350,14 +393,14 @@ def build_app(service: HighlightService | None = None) -> gr.Blocks:
         return next(
             (
                 item
-                for item in _source_library(service.list_videos(), offline=offline)
+                for item in available_sources()
                 if str(_get(item, "id")) == str(video_id)
             ),
             None,
         )
 
     def library(video: Any | None = None) -> tuple[Any, str]:
-        items = _source_library(service.list_videos(), offline=offline)
+        items = available_sources()
         value = str(_get(video, "id")) if video else (str(_get(items[0], "id")) if items else None)
         return gr.update(
             choices=[
@@ -414,7 +457,7 @@ def build_app(service: HighlightService | None = None) -> gr.Blocks:
             choices = []
             for item in items:
                 count = _get(item, "segment_count")
-                label = str(_get(item, "label", "SF Streets recording"))
+                label = str(_get(item, "label", "Hackathon recording"))
                 if count is not None:
                     label += f" · {count} indexed segments"
                 choices.append((label, str(_get(item, "original_video"))))
@@ -422,9 +465,9 @@ def build_app(service: HighlightService | None = None) -> gr.Blocks:
                 gr.update(choices=choices, value=choices[0][1] if choices else None),
                 gr.update(interactive=bool(choices)),
                 _notice(
-                    f"Found {len(choices)} SF Streets recordings. Choose one to download its original footage."
+                    f"Found {len(choices)} hackathon recordings. Choose one to download its original footage."
                     if choices
-                    else "No SF Streets recordings were found in the configured dataset index."
+                    else "No public hackathon recordings were found in the configured dataset index."
                 ),
             )
         except Exception as error:
@@ -433,13 +476,13 @@ def build_app(service: HighlightService | None = None) -> gr.Blocks:
     def import_dataset_source(original_video: str | None) -> tuple[Any, str, str]:
         try:
             if not original_video:
-                raise ValueError("Browse SF Streets and choose a dataset recording first.")
+                raise ValueError("Browse the collection and choose a dataset recording first.")
             video = service.import_dataset_source(original_video)
             choices, metadata = library(video)
             return (
                 choices,
                 metadata,
-                _notice("SF Streets footage ready. Choose a direction to make a cut."),
+                _notice("Hackathon footage ready. Choose a direction to make a cut."),
             )
         except Exception as error:
             return gr.skip(), gr.skip(), _notice(_error_message(error), error=True)
@@ -643,7 +686,7 @@ def build_app(service: HighlightService | None = None) -> gr.Blocks:
             + (
                 "<h1>Your footage.<br>Your director’s cut.</h1></div>"
                 if offline
-                else "<h1>One city.<br>Different stories.</h1></div>"
+                else "<h1>Every recording.<br>Different stories.</h1></div>"
             )
             + "<p>Tell the editor what to find.<br>See the moments. Make your cut.</p></div>"
         )
@@ -653,7 +696,7 @@ def build_app(service: HighlightService | None = None) -> gr.Blocks:
             with gr.Column(scale=4, min_width=300, elem_classes=["ha-side"]):
                 with gr.Group(elem_classes=["ha-panel", "ha-stack"]):
                     gr.HTML(
-                        _section("01", "Choose your footage" if offline else "Explore SF Streets")
+                        _section("01", "Choose your footage" if offline else "Explore the collection")
                     )
                     sources = gr.Dropdown(
                         choices=[
@@ -700,13 +743,13 @@ def build_app(service: HighlightService | None = None) -> gr.Blocks:
                         )
                     else:
                         with gr.Accordion(
-                            "Supplied SF Streets dataset", open=not bool(first)
+                            "Supplied hackathon collection", open=not bool(first)
                         ) as add_recording:
                             gr.HTML(
-                                '<p class="ha-hint">Explore the supplied street camera footage. '
+                                '<p class="ha-hint">Explore every supplied recording, from city streets to indoor activity. '
                                 "Choose a recording to use its original video and indexed captions.</p>"
                             )
-                            browse = gr.Button("Browse SF Streets", elem_classes=["ha-secondary"])
+                            browse = gr.Button("Browse all footage", elem_classes=["ha-secondary"])
                             dataset_sources = gr.Dropdown(
                                 choices=[], value=None, label="Dataset recording", interactive=True
                             )
@@ -720,7 +763,7 @@ def build_app(service: HighlightService | None = None) -> gr.Blocks:
                         + (
                             "Index once. Make different cuts from the same footage."
                             if offline
-                            else "Browse SF Streets, choose a source, then make different cuts from the same city footage."
+                            else "Browse the collection, choose a source, then make different cuts from the same recording."
                         )
                         + "</p>"
                     )

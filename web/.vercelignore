@@ -1,5 +1,6 @@
+.env*
+node_modules/
 tests/
 dev.mjs
-node_modules/
 *.log
-.env*
+public/*.local.json

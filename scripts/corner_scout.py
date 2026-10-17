@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import math
 import os
 import re
 import sys
@@ -27,7 +28,7 @@ import city_report as city
 from business_report import _headlines
 from pydantic import Field
 from scout_previews import corner_previews
-from vision_tags import TAXONOMY
+from vision_tags import TAXONOMY, valid_cached_frames
 
 from highlight_agent.inference import InferenceClient, InferenceError
 from highlight_agent.media import MediaError
@@ -38,6 +39,8 @@ from highlight_agent.storage import read_json, write_json
 
 CAP = 4  # one crowded frame cannot outweigh steady traffic
 MIN_FRAMES = 3  # fewer core-audience frames than this at the best corner: no recommendation
+MIN_ANALYZED_SECONDS = 180
+MIN_COVERAGE = 0.9
 CORE = 0.75  # weights at or above this mark a core customer audience
 # Present in nearly every frame at every corner, so they cannot separate corners.
 BASELINE = {"casual_adult", "mid_range_car"}
@@ -76,14 +79,22 @@ def profile_business(client: InferenceClient, business: str) -> BusinessProfile:
     return client.structured(PROFILE_SYSTEM, {"business": business}, BusinessProfile, validate)
 
 
-def load_corners(service: HighlightService) -> list[dict]:
+def load_corners(service: HighlightService, city_name: str | None = None) -> list[dict]:
     headlines = _headlines(None, service.config.output_dir)
     corners = []
-    for video in service.list_videos():
-        path = service.config.data_dir / "vision" / f"{video.id}.json"
-        if video.dataset != "sf-streets" or not path.exists():
+    for video in city.scouting_videos(service):
+        if city_name and city._city_name(video) != city.city_label(city_name):
             continue
-        frames = [frame for frame in read_json(path)["frames"] if frame["counts"]]
+        path = service.config.data_dir / "vision" / f"{video.id}.json"
+        if not path.exists():
+            continue
+        moments = city._moments(service, video)
+        try:
+            manifest = read_json(path)
+        except (OSError, ValueError):
+            continue
+        frames = list(valid_cached_frames(video, moments, manifest).values())
+        analyzed = _analyzed_duration(frames)
         corners.append(
             {
                 "video": video,
@@ -91,28 +102,124 @@ def load_corners(service: HighlightService) -> list[dict]:
                 "headline": headlines.get(video.id, ""),
                 "recorded": city._recorded(video),
                 "frames": frames,
-                "moments": {item.id: item for item in city._moments(service, video)},
+                "moments": {item.id: item for item in moments},
+                "stream_id": getattr(video, "stream_id", None) or video.id,
+                "city": city._city_name(video), "location": city._city_name(video),
+                "camera_id": getattr(video, "camera_id", None),
+                "expected_seconds": video.duration,
+                "analyzed_seconds": analyzed,
+                "coverage": min(1, analyzed / video.duration), "eligible": True,
             }
         )
-    return sorted(corners, key=lambda corner: corner["camera"])
+    recordings = {}
+    for corner in corners:
+        key = (corner["city"], corner["camera_id"] or corner["camera"])
+        recordings.setdefault(key, []).append(corner)
+    for group in recordings.values():
+        if len(group) > 1:
+            ordered = sorted(group, key=lambda corner: (corner["video"].original_video or "", corner["stream_id"]))
+            for number, corner in enumerate(ordered, 1):
+                corner["camera"] += f" · recording {number}"
+    return sorted(corners, key=lambda corner: (corner["city"], corner["camera"]))
 
 
-def rank(corners: list[dict], weights: dict[str, float]) -> list[dict]:
-    """Deterministic 0–1 match: each audience's share of frames, relative to the best corner.
+def _frame_duration(frame: dict, strict: bool = False) -> float:
+    start, end = frame.get("start_seconds", frame.get("start")), frame.get("end_seconds", frame.get("end"))
+    if start is None or end is None:
+        return 0 if strict else 5  # Old fixtures have equal-length frames and no intervals.
+    if (isinstance(start, bool) or isinstance(end, bool)
+            or not isinstance(start, (int, float)) or not isinstance(end, (int, float))
+            or not math.isfinite(start) or not math.isfinite(end) or start < 0 or end <= start):
+        return 0
+    return end - start
+
+
+def _analyzed_duration(frames: list[dict]) -> float:
+    """Count each valid second once, even when observation windows overlap."""
+    intervals = []
+    legacy_seconds = 0
+    for frame in frames:
+        start = frame.get("start_seconds", frame.get("start"))
+        end = frame.get("end_seconds", frame.get("end"))
+        if start is None or end is None:
+            legacy_seconds += _frame_duration(frame)
+        elif _frame_duration(frame) > 0:
+            intervals.append((start, end))
+    seconds, covered_end = legacy_seconds, 0
+    for start, end in sorted(intervals):
+        seconds += max(0, end - max(start, covered_end))
+        covered_end = max(covered_end, end)
+    return seconds
+
+
+def _independent_observations(frames: list[dict]) -> list[dict]:
+    """Use a maximum set of disjoint windows as independent observations."""
+    selected, intervals = [], []
+    for index, frame in enumerate(frames):
+        start = frame.get("start_seconds", frame.get("start"))
+        end = frame.get("end_seconds", frame.get("end"))
+        if start is None or end is None:
+            selected.append((index, frame))  # Historical fixtures have no source intervals.
+        else:
+            intervals.append((end, start, index, frame))
+    covered_end = 0
+    for end, start, index, frame in sorted(intervals, key=lambda item: item[:3]):
+        if start >= covered_end:
+            selected.append((index, frame))
+            covered_end = end
+    return [frame for _, frame in sorted(selected)]
+
+
+def _valid_counts(frame: dict) -> bool:
+    counts = frame.get("counts")
+    return isinstance(counts, dict) and all(
+        not isinstance(value, bool) and isinstance(value, (int, float))
+        and math.isfinite(value) and value >= 0 and float(value).is_integer()
+        for value in counts.values()
+    )
+
+
+def has_enough_evidence(ranking: list[dict]) -> bool:
+    return bool(ranking and ranking[0]["sufficient"])
+
+
+def rank(corners: list[dict], weights: dict[str, float], city_name="San Francisco") -> list[dict]:
+    """Duration-weighted positive audience presence, relative to this city's best recording.
 
     Normalizing per audience lets a rare but decisive signal (dogs in 3 frames) count as
     much as a common one (buses in 17), instead of being drowned by crowd size.
     """
-    weights = {key: value for key, value in weights.items() if key not in BASELINE}
+    corners = [corner for corner in corners if corner.get("eligible", True)
+               and city.city_label(corner.get("city", corner.get("location")))
+               == city.city_label(city_name)]
+    if not corners:
+        return []
+    weights = {key: value for key, value in weights.items()
+               if key not in BASELINE and key in TAXONOMY
+               and not isinstance(value, bool) and isinstance(value, (int, float))
+               and math.isfinite(value) and 0 <= value <= 1}
     core = {key for key, value in weights.items() if value >= CORE}
+    strict = {id(corner): any(key in corner for key in ("expected_seconds", "coverage", "eligible"))
+              for corner in corners}
+    frames = {id(corner): [frame for frame in corner["frames"]
+                          if _valid_counts(frame) and _frame_duration(frame, strict[id(corner)]) > 0]
+              for corner in corners}
+    observations = {id(corner): _independent_observations(frames[id(corner)]) for corner in corners}
+    analyzed = {id(corner): _analyzed_duration(frames[id(corner)])
+                for corner in corners}
     seen = {
         id(corner): {
-            key: sum(1 for f in corner["frames"] if f["counts"].get(key)) for key in TAXONOMY
+            key: sum(1 for frame in observations[id(corner)] if frame["counts"].get(key))
+            for key in TAXONOMY
         }
         for corner in corners
     }
     rate = {
-        id(corner): {k: n / max(1, len(corner["frames"])) for k, n in seen[id(corner)].items()}
+        id(corner): {
+            key: _analyzed_duration([frame for frame in frames[id(corner)]
+                                     if frame["counts"].get(key)]) / max(1e-12, analyzed[id(corner)])
+            for key in TAXONOMY
+        }
         for corner in corners
     }
     best = {key: max(rate[id(corner)][key] for corner in corners) for key in weights}
@@ -127,7 +234,7 @@ def rank(corners: list[dict], weights: dict[str, float]) -> list[dict]:
     rows = []
     for corner in corners:
         scored = []
-        for frame in corner["frames"]:
+        for frame in observations[id(corner)]:
             counts = frame["counts"]
             value = sum(w * min(counts.get(k, 0), CAP) for k, w in weights.items())
             scored.append((value, any(counts.get(k, 0) for k in core), frame))
@@ -137,13 +244,24 @@ def rank(corners: list[dict], weights: dict[str, float]) -> list[dict]:
             if helpful
             else share(corner, core)
         )
+        expected = corner.get("expected_seconds", corner.get("duration", analyzed[id(corner)]))
+        if isinstance(expected, bool) or not isinstance(expected, (int, float)) or not math.isfinite(expected):
+            expected = 0
+        coverage = min(1, analyzed[id(corner)] / expected) if expected > 0 else 0
+        core_frames = sum(1 for _, has_core, _ in scored if has_core)
+        sufficient = core_frames >= MIN_FRAMES and (not strict[id(corner)] or (
+            analyzed[id(corner)] >= MIN_ANALYZED_SECONDS and coverage >= MIN_COVERAGE
+        ))
         rows.append(
             {
                 "corner": corner,
                 "score": match,
                 "seen": seen[id(corner)],
-                "core_frames": sum(1 for _, has_core, _ in scored if has_core),
+                "core_frames": core_frames,
                 "frames": len(scored),
+                "analyzed_seconds": analyzed[id(corner)], "expected_seconds": expected,
+                "coverage": coverage, "eligible": corner.get("eligible", True),
+                "sufficient": sufficient, "coverage_required": strict[id(corner)],
                 "best": sorted((item for item in scored if item[1]), key=lambda item: -item[0])[:3],
             }
         )
@@ -220,18 +338,23 @@ def apply_named(business: str, profile: BusinessProfile) -> tuple[dict, dict]:
     return weights, why
 
 
-def scout(service, client, corners, business: str) -> dict:
+def scout(service, client, corners, business: str, city_name="San Francisco") -> dict:
     business = business.strip()
     if not 3 <= len(business) <= 200:
         raise ValueError("Describe the business in 3–200 characters.")
+    corners = [corner for corner in corners
+               if city.city_label(corner.get("city", corner.get("location")))
+               == city.city_label(city_name) and corner.get("eligible", True)]
+    if not corners:
+        raise ValueError(f"No reviewed street recordings with vision observations in {city.city_label(city_name)} yet.")
     for corner in corners:
         HighlightService._verify_source(corner["video"])
     started = time.perf_counter()
     with service.tracer.span("corner_scout.scout", {"business": business}) as root:
         profile = profile_business(client, business)
         weights, why = apply_named(business, profile)
-        ranking = rank(corners, weights)
-        recommend = ranking[0]["core_frames"] >= MIN_FRAMES
+        ranking = rank(corners, weights, city_name)
+        recommend = has_enough_evidence(ranking)
         slug = re.sub(r"[^a-z0-9]+", "-", business.lower()).strip("-")[:40] or "business"
         out_dir = service.config.output_dir / "corner-scout" / f"{datetime.now():%H%M%S}-{slug}"
         reels = [
@@ -245,6 +368,7 @@ def scout(service, client, corners, business: str) -> dict:
         }
     return {
         "business": business,
+        "city": city.city_label(city_name),
         "profile": profile,
         "weights": weights,
         "why": why,
@@ -274,7 +398,10 @@ def recommendation_html(result: dict) -> str:
             '<span class="cs-eyebrow cs-warn">More footage needed</span>'
             '<h2 class="cs-warn">Not enough evidence to recommend a corner</h2>'
             f'<p class="cs-muted">The best corner shows your core customers in only '
-            f'{top["core_frames"]} of {top["frames"]} sampled frames.</p>'
+            f'{top["core_frames"]} of {top["frames"]} sampled frames; '
+            f'{top.get("analyzed_seconds", 0) / 60:.1f} minutes analyzed, '
+            f'{100 * top.get("coverage", 0):.0f}% coverage. A recommendation needs '
+            'three core-audience frames, three analyzed minutes, and 90% coverage.</p>'
         )
     chips = "".join(
         f'<span class="cs-chip {"cs-core" if weight >= CORE else ""}" '
@@ -330,8 +457,9 @@ def ranking_html(result: dict) -> str:
 <b>{e(corner["camera"])}</b><span class="cs-score">{100 * row["score"]:.0f}<small>/100</small></span></div>
 <div class="cs-track"><div class="cs-fill" style="width:{100 * row["score"]:.1f}%"></div></div>
 <div class="cs-frame-count">Core audience in <b>{row["core_frames"]} of {row["frames"]} sampled frames</b></div>
+<div class="cs-frame-count">{row.get("analyzed_seconds", 0) / 60:.1f} minutes analyzed · {100 * row.get("coverage", 0):.0f}% valid coverage</div>
 <details><summary>Audience &amp; location details</summary>
-<p>{e(corner.get("headline", ""))}<br>Recorded {e(corner["recorded"])}</p>
+<p>{e(corner.get("headline", ""))}<br>Source timestamp {e(corner["recorded"])} · timezone not supplied</p>
 <p>Your audience: {e(wanted)} frames</p>
 <p>Corner mix: {e(" · ".join(f"{label} {n}" for label, n in mix))}</p></details></div>'''
         )
@@ -365,7 +493,7 @@ def summary_html(result: dict) -> str:
     )
 
 
-def introduction_html(previews: list[dict] | None = None) -> str:
+def introduction_html(previews: list[dict] | None = None, city_name="San Francisco") -> str:
     cards = []
     for index, preview in enumerate(previews or []):
         image = (
@@ -384,9 +512,9 @@ def introduction_html(previews: list[dict] | None = None) -> str:
 <p>Describe your business above. We’ll compare the audiences on these streets
 and show you the clips behind your shortlist.</p>
 <div class="cs-scene-tags"><span>People</span><span>Vehicles</span><span>Animals</span></div></div>
-<div class="cs-camera-stage"><div class="cs-stage-header"><span>SF STREETS</span>
+<div class="cs-camera-stage"><div class="cs-stage-header"><span>{html.escape(city.city_label(city_name)).upper()} STREETS</span>
 <span>THE SOURCE FOOTAGE</span></div><div class="cs-stage-cards">{"".join(cards)}</div>
-<div class="cs-stage-footer"><span>Recorded footage · San Francisco</span><span>⌖</span></div></div>
+<div class="cs-stage-footer"><span>Recorded footage · {html.escape(city.city_label(city_name))}</span><span>⌖</span></div></div>
 <div class="cs-steps"><span><b>01</b> Describe your business</span>
 <span><b>02</b> Compare the audiences</span><span><b>03</b> Watch the evidence</span></div></section>'''
 
@@ -410,7 +538,7 @@ preserveAspectRatio="none">{"".join(paths)}</svg>{"".join(nodes)}<span class="cs
 
 
 LIMITATIONS_HTML = '''<details class="cs-limitations"><summary>About this scouting sample</summary>
-<p>One short visit per corner, recorded at different times of day. Audience counts are vision-model
+<p>Recordings cover different visits and times of day. Audience counts are vision-model
 estimates from one frame per five seconds, not unique people. Premium-car and people-type calls
 are judgements from single frames. Check the evidence before deciding; a lease decision needs
 longer, comparable recordings plus rent and competition.</p></details>'''
@@ -553,10 +681,13 @@ EXAMPLES = [
 ]
 
 
-def build_app(service, client, corners):
+def build_app(service, client, corners, city_name="San Francisco"):
     import gradio as gr
 
-    def run(business: str):
+    corners = [{**corner, "city": city.city_label(corner.get("city", corner.get("location")))}
+               for corner in corners]
+
+    def run(business: str, selected_city: str = city.city_label(city_name)):
         def cleared(message):
             return (
                 gr.update(value=message, visible=True),
@@ -575,9 +706,10 @@ def build_app(service, client, corners):
                 f'<p>{html.escape(detail)}</p><p>Edit your business description or try again.</p></section>'
             )
 
-        yield cleared(loading_html(corners))
+        selected = [corner for corner in corners if corner["city"] == selected_city]
+        yield cleared(loading_html(selected))
         try:
-            result = scout(service, client, corners, business)
+            result = scout(service, client, selected, business, selected_city)
         except (ValueError, InferenceError, ServiceError, MediaError) as error:
             yield failed(str(error))
             return
@@ -620,7 +752,7 @@ def build_app(service, client, corners):
                 '<header class="cs-masthead"><div class="cs-brand">'
                 '<span class="cs-logo" aria-hidden="true">⌖</span>Corner Scout</div>'
                 '<span class="cs-masthead-note">Same streets. Different businesses.</span>'
-                f'<div class="cs-data-badges"><span>{len(corners)} SF corners</span>'
+                f'<div class="cs-data-badges"><span>{len(corners)} street recordings</span>'
                 f'<span>{minutes:.0f} min of footage</span><span>{frame_count} sampled frames</span></div></header>',
                 apply_default_css=False,
             )
@@ -634,6 +766,11 @@ def build_app(service, client, corners):
                     '<div class="cs-query-label">What are you opening?<span>One business. Every corner compared.</span></div>',
                     apply_default_css=False,
                 )
+                selected_city = gr.Dropdown(
+                    choices=sorted({"San Francisco", city.city_label(city_name),
+                                    *(corner["city"] for corner in corners)}),
+                    value=city.city_label(city_name), label="City", interactive=True,
+                )
                 with gr.Row(elem_id="cs-input-row"):
                     business = gr.Textbox(
                         label="Business type", show_label=False,
@@ -643,7 +780,8 @@ def build_app(service, client, corners):
                     go = gr.Button("Find my corner", variant="primary", scale=1, elem_id="cs-go")
                 # Examples appear with the query; their outputs render below it.
                 message = gr.HTML(
-                    value=introduction_html(corner_previews(service, corners)), render=False,
+                    value=introduction_html(corner_previews(service, [corner for corner in corners
+                                            if corner["city"] == city.city_label(city_name)]), city_name), render=False,
                     apply_default_css=False, elem_id="cs-message",
                 )
                 recommendation = gr.HTML(
@@ -683,15 +821,29 @@ def build_app(service, client, corners):
             gr.HTML(LIMITATIONS_HTML, apply_default_css=False)
             options = {"show_progress": "hidden", "concurrency_limit": 1}
             # One click on an example fills the box, then runs like the button.
-            examples.load_input_event.then(run, business, outputs, **options)
-            go.click(run, business, outputs, **options)
-            business.submit(run, business, outputs, **options)
+            inputs = [business, selected_city]
+            example_event = examples.load_input_event.then(run, inputs, outputs, **options)
+            go_event = go.click(run, inputs, outputs, **options)
+            submit_event = business.submit(run, inputs, outputs, **options)
+
+            def change_city(name):
+                selected = [corner for corner in corners if corner["city"] == name]
+                return (
+                    gr.update(value=introduction_html(corner_previews(service, selected), name), visible=True),
+                    gr.update(value="", visible=False), gr.update(visible=False),
+                    gr.update(value=None, visible=False), "", "", gr.update(visible=False),
+                    gr.update(value=None, visible=False), "",
+                )
+
+            selected_city.change(change_city, selected_city, outputs,
+                                 cancels=[example_event, go_event, submit_event], **options)
     return app
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--business", help="Print a ranking instead of starting the app")
+    parser.add_argument("--city", default="San Francisco", help="Compare recordings within this city")
     args = parser.parse_args(argv)
     service = HighlightService()
     corners = load_corners(service)
@@ -703,11 +855,12 @@ def main(argv: list[str] | None = None) -> int:
     client = InferenceClient(service.config)
     service.tracer.initialize()
     if args.business:
-        result = scout(service, client, corners, args.business)
+        result = scout(service, client, corners, args.business, args.city)
         print(
             json.dumps(
                 {
                     "business": result["business"],
+                    "city": result["city"],
                     "customers": result["profile"].customers,
                     "weights": result["weights"],
                     "recommend": result["recommend"],
@@ -716,6 +869,8 @@ def main(argv: list[str] | None = None) -> int:
                             "camera": r["corner"]["camera"],
                             "score": round(r["score"], 3),
                             "core_frames": r["core_frames"],
+                            "analyzed_seconds": r["analyzed_seconds"], "coverage": r["coverage"],
+                            "sufficient": r["sufficient"],
                             "best": [f["notable"] for _, _, f in r["best"]],
                         }
                         for r in result["ranking"]
@@ -727,7 +882,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         return 0
-    app = build_app(service, client, corners)
+    app = build_app(service, client, corners, args.city)
     app.launch(
         server_name="127.0.0.1",
         server_port=int(os.getenv("PORT", "7861")),

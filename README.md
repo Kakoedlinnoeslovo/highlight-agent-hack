@@ -7,6 +7,7 @@
 
 <p align="center">
   <a href="https://corner-scout-rouge.vercel.app"><strong>Try the live demo</strong></a> ·
+  <a href="https://corner-scout-rouge.vercel.app/explorer.html">Explore all footage</a> ·
   <a href="#watch-the-demo">Watch the video</a> ·
   <a href="#try-it-locally">Quick start</a> ·
   <a href="#prepare-footage">Prepare footage</a> ·
@@ -30,12 +31,12 @@ Built for **Real-Time Video Agents Hack**, London · **17 October 2026**.
 
 <p align="center">
   <a href="docs/assets/corner-scout-demo.mp4"><img src="docs/assets/corner-scout-demo.gif" width="800" alt="Corner Scout walkthrough: describe a business, compare street corners, and play the supporting footage"></a><br>
-  <a href="https://drive.google.com/file/d/1zZgiQSG6cm3ZWqlijK4rIugzymr1lPrq/view?usp=sharing"><strong>Watch the 82-second demo with sound</strong></a> · <a href="docs/assets/corner-scout-demo.mp4">MP4 in this repo</a>
+  <a href="https://drive.google.com/file/d/1zZgiQSG6cm3ZWqlijK4rIugzymr1lPrq/view?usp=sharing"><strong>Watch the historical 82-second demo with sound</strong></a> · <a href="docs/assets/corner-scout-demo.mp4">MP4 in this repo</a>
 </p>
 
 The video shows real searches from the **original five-camera San Francisco sample**: dog grooming, luxury car detailing, and a kids' toy store with too little evidence for a recommendation. Each search calls the live profile endpoint; the displayed timings are measured. The presenter is AI-generated and the music is synthesized. [Recording and assembly details](#the-demo-uses-the-same-renderer).
 
-**Deep dive: the frame proof.** Click an audience count to see every matching still, inspect all sampled frames, and play the surrounding moment. [Watch the 108-second frame-proof walkthrough](docs/assets/corner-scout-proof-reveal.mp4) or read the [proof controls and recording guide](docs/PROOF_REVEAL.md). The 82-second video above is the main demo.
+**Historical deep dive: the frame proof.** Click an audience count to see every matching still, inspect all sampled frames, and play the surrounding moment. [Watch the 108-second frame-proof walkthrough](docs/assets/corner-scout-proof-reveal.mp4) or read the [proof controls and recording guide](docs/PROOF_REVEAL.md). Both recordings use the original 15-minute SF sample. The current full-recording results and live walkthrough are below.
 
 ![Original SF sample: Camera 5 ranks first for a dog grooming salon, with dogs in 3 of 36 sampled frames and playable evidence](docs/assets/corner-scout-dog-grooming.png)
 
@@ -47,13 +48,34 @@ The video shows real searches from the **original five-camera San Francisco samp
 
 | You want to… | Use… | What you get |
 | --- | --- | --- |
-| Find a location for a business | **Find my corner** | Rankings of the five sampled SF corners, audience matches, and playable source evidence. |
+| Find a location for a business | **Find my corner** | City-specific rankings of reviewed fixed street cameras, audience matches, and playable source evidence. |
+| Search the supplied collection | **Explore all footage** | Caption keyword search, location/scene/recording filters, source intervals, and import/playable coverage. |
 | Inspect a recommendation | **Evidence viewer** | Sampled frames, audience counts, and the exact source moment behind a match. |
-| Make a custom reel (secondary tool) | **Local highlight editor** | Visual briefs, source previews, revision, undo, and downloadable MP4s. Not part of the Corner Scout demo. |
+| Make a custom reel (secondary tool) | **Local highlight editor** | Visual briefs, source previews, revision, undo, and downloadable MP4s. Outside the Corner Scout demo. |
 
-**Saved SF snapshot:** 5 corners · 15 minutes of footage · 180 observations. Each corner has three minutes of footage, sampled once per five-second segment. The checked-in snapshot was exported on 17 October 2026.
+**Complete collection:** 55 recordings · 612 chunks · 3,537 caption segments · about 4 hours 55 minutes, all searchable and playable. It spans New York, San Francisco, Toronto, neighborhood streets, indoor activity, warehouses, and Nashville traffic. Recording previews and sampled evidence images total **681.24 MB**, below the 800 MB budget. Originals remain in VAST; verified indexed footage supports local offline playback. See [collection validation](docs/VALIDATION.md#full-collection-expansion).
 
-**Recommendations need evidence:** the highest-ranked corner must show a core audience in at least **3 sampled frames**. Scores compare audience presence across the sampled corners; frame counts can include the same subject more than once.
+**Recommendations need evidence:** at least **3 core-audience samples**, **3 analyzed minutes**, and **90% valid duration coverage**. Scores use audience presence weighted by segment duration. Moving cameras, highways, and operational indoor footage remain searchable in the explorer.
+
+**Current scouting data:** **937 valid observations across six full recordings, covering 78.05 analyzed minutes**. San Francisco uses cameras **3, 4, and 5** (397 samples, 33.05 minutes). New York uses **two separate camera-1 recordings** and camera **2** (540 samples, 45 minutes). First/middle/last frame review excluded the full SF camera-1 and camera-2 recordings because their viewpoints move; both remain in the explorer. Every eligible indexed segment has a successful vision observation.
+
+<details>
+<summary><strong>Current full-recording results: six business examples</strong></summary>
+
+| Example | San Francisco | New York |
+| --- | --- | --- |
+| **Dog grooming salon** | **Camera 5** · dogs in **10/180** samples | **Not enough evidence** · best recording has dogs in **2/180** samples |
+| **Luxury watch boutique** | **Camera 5** · premium cars in **86/180** | **Camera 2** · premium cars in **49/180** |
+| **Student coffee shop** | **Camera 5** · young adults in **33/180** | **Camera 1 · recording 2** · young adults in **28/180** |
+| **Kids' toy store** | **Camera 5** · families with children in **8/180** | **Camera 1 · recording 2** · families with children in **13/180** |
+| **Bike repair shop** | **Camera 5** · cyclists in **48/180** | **Camera 1 · recording 2** · cyclists in **67/180** |
+| **Souvenir shop** | **Not enough evidence** · no tourist samples | **Camera 2** · tourists in **3/180** |
+
+Counts describe positive sampled frames at the leading recording, rather than unique customers. SF camera 3 has 37 samples, including a shortened final segment; the other eligible recordings have 180 each. Code compares duration-weighted presence only within the selected city and applies the evidence thresholds above.
+
+These measured results use real saved business profiles and completed vision caches. The local artifact `outputs/full-example-rankings.json` records weights, scores, source intervals, hashes, and matching Python/browser results for all 12 city/example combinations. Fresh business profiles can choose different helpful audiences; named audiences stay core. The vision pass took **18 minutes 6 seconds elapsed**, including **12 minutes 20 seconds of active processing** while imports arrived.
+
+</details>
 
 **Keep the limits in mind.** Audience labels are vision-model estimates from sampled frames. Counts can include the same person, animal, or vehicle more than once. Recordings cover different dates, times, and durations; they help choose where to investigate next. A lease decision also needs comparable recordings, rent, and competition data. **Human caption and vision accuracy review remains pending.**
 
@@ -64,16 +86,16 @@ The video shows real searches from the **original five-camera San Francisco samp
 
 **This is a scouting sample for deciding where to investigate next. Longer, comparable recordings and commercial context are needed for a location decision.**
 
-- **Small, uneven sample.** Each corner has three minutes of footage. Cameras 1–4 were recorded on 1 October at different morning times; Camera 5 was recorded on 6 October at 12:35. Rankings do not control for date or time of day.
+- **Uneven recordings.** The current eligible set has one approximately three-minute SF recording and five fifteen-minute recordings. Filename-derived source timestamps have no supplied timezone and are not established capture times. Rankings do not control for date or time of day.
 - **Estimated categories.** People types and vehicle classes are model judgments from single frames. The same person can appear more than once; an undetected audience may still be present outside the sample.
 - **Relative scores.** A match score describes the observed audience mix among these corners. Rent, competition, purchasing intent, unique footfall, and commercial demand are not measured.
 - **Finite audience vocabulary.** You can enter a free-text business, but the profile maps onto a fixed category list. Unnamed audiences and helpful-audience choices can vary between model calls.
-- **Saved footage, live profiling.** The hosted app uses exported observations and clips, not live camera feeds. It still needs working W&B access for each business request. Full recordings and dataset credentials are not bundled.
+- **Saved footage, live profiling.** The hosted app uses exported observations and recording previews; it does not read live camera feeds. It still needs working W&B access for each business request. Original recordings and dataset credentials are not bundled; public previews are hosted in Vercel Blob.
 - **Validation boundaries.** Automated and browser checks exercise behavior. Human review of category accuracy remains pending, and the synthetic offline fixture establishes local plumbing only.
 
 </details>
 
-The video, screenshots, and tables below describe the **original 15-minute SF sample**, recorded for three minutes per corner. Its 180 frames took 2.7 minutes to tag; saved business searches took about 2–6 seconds. Expanded recordings can produce different rankings.
+The 82-second video, screenshot, and historical tables below describe the **original 15-minute SF sample**, with three minutes per corner. Its 180 frames took 2.7 minutes to tag; saved business searches took about 2–6 seconds. The current full-recording results above differ: the kids' toy store now has enough evidence at SF camera 5.
 
 <details>
 <summary><strong>Original SF sample: camera observations and business rankings</strong></summary>
@@ -103,7 +125,7 @@ No tourists and no older adults were detected at any corner.
 | 🧸 **Kids' toy store** | Families with children | **Not enough evidence.** One stroller in 180 frames. |
 | 🎁 **Souvenir shop** | Tourists | **Not enough evidence.** No tourists seen. |
 
-Each result above came out the same in two runs. When a description names an audience (dog, luxury, student, kids, bike…), that audience is always core. Otherwise the text model chooses, and its choice can vary between runs; the chips on every result show what it chose. A recommendation needs at least three core-audience frames at the highest-ranked corner.
+Each result above came out the same in two runs. When a description names an audience (dog, luxury, student, kids, bike…), that audience is always core. Otherwise the text model chooses, and its choice can vary between runs; the chips on every result show what it chose. The original sample required at least three core-audience frames for a recommendation; current full recordings also need the duration and coverage checks above.
 
 ### Why frames, not just captions
 
@@ -111,37 +133,38 @@ At Camera 1, **25 of 36 captions mention a bicycle**. Counting caption words wou
 
 </details>
 
+
 <a id="one-business-from-question-to-evidence"></a>
 
 <details>
 <summary><strong>Worked example: dog grooming, from question to evidence</strong></summary>
 
-**“Dog grooming salon” puts Camera 5 first because dogs appear in 3 of its 36 sampled frames.**
+**“Dog grooming salon” puts Camera 5 first because dogs appear in 10 of its 180 sampled frames.**
 
 1. **Describe the business.** The text model proposes its target audiences. Explicit supported audience terms in the description, such as “dog” or “student”, are enforced as core by application rules.
-2. **Compare the observations.** Camera 5 has dogs in three frames; Camera 4 has one; the other three cameras have none in this sample.
-3. **Inspect the ranking.** In the saved run, Camera 5 scores **80/100**; live runs land within a few points because the helpful audiences the model adds can change. The UI shows the core and helpful audiences and each corner's observed mix.
-4. **Inspect the evidence.** Click the count to see all matching sampled frames and the full sampling grid. For dogs, inspect 0:02.5, 0:07.5, and 0:12.5; switch the reviewed detail crop to the full frame, then play the surrounding clip. The same dog can appear in several samples. Local renders also save an `edit_plan.json` with exact source windows.
+2. **Compare the observations.** Camera 5 has dogs in ten frames; camera 4 has two; camera 3 has none. The full SF camera-1 and camera-2 recordings are excluded after motion review.
+3. **Inspect the ranking.** In the saved full-recording run, camera 5 scores **100/100**; helpful audiences can change between live profiles. The UI shows the core and helpful audiences and each corner's observed mix.
+4. **Inspect the evidence.** Click the count to see all matching sampled frames and the full sampling grid. For dogs, inspect the ten matching samples, including the retained reviewed crop at 0:07.5; switch to the full frame, then play the surrounding source interval. The same dog can appear in several samples. Local renders also save an `edit_plan.json` with exact source windows.
 
-The score is a relative audience match within this sample. It is not an 80% probability that the business will succeed.
+The score is a relative audience match within this sample. It is not a 100% probability that the business will succeed.
 
 </details>
 
 <a id="a-2-minute-walkthrough"></a>
 
 <details>
-<summary><strong>Two-minute walkthrough for the original SF sample</strong></summary>
+<summary><strong>Two-minute walkthrough for the full collection</strong></summary>
 
-1. **Click** **Dog grooming salon**. Camera 5 wins; point at “Dogs · core” and “Dogs in 3/36 frames”, then play the evidence clips.
-2. **Type** **Luxury car detailing**. Camera 1 wins on premium cars: same footage, different corner.
-3. **Click** **Kids' toy store**. “Not enough evidence”: it refuses to guess.
-4. **Click** **Bike repair shop**. Camera 1's captions mention a bicycle in 25 of 36 segments, but its frames show a parked kick scooter and zero cyclists: that is why Corner Scout reads frames.
+1. **Open Explore all footage** and show actual coverage. Search **forklift** in **Warehouse**, play a result, and inspect its supplied caption and exact source interval. Confirm complete coverage before claiming every recording is playable.
+2. **Return to Find my corner**, select **San Francisco**, and click **Dog grooming salon**. Camera 5 leads with dogs in **10/180** samples; play the supporting footage.
+3. **Switch to New York** and click **Luxury watch boutique**. Camera 2 leads with premium cars in **49/180** samples. Camera 1's two recordings stay separate.
+4. **Show an abstention:** **Dog grooming salon** in New York has at most **2/180** core samples, or **Souvenir shop** in San Francisco has none. The current **Kids' toy store** example recommends SF camera 5, with families in **8/180** samples.
+5. **Point at analyzed duration and coverage.** The current Scout uses six motion-reviewed recordings and 937 valid observations. Local runs can show a Weave trace when available; hosted searches do not create traces.
 
-Present the [live app](https://corner-scout-rouge.vercel.app); this is the same walkthrough as the [82-second demo](https://drive.google.com/file/d/1zZgiQSG6cm3ZWqlijK4rIugzymr1lPrq/view?usp=sharing). The hosted app does not create Weave traces; the local pipeline does.
-
-The saved winners apply to the original sample. For the full script, preparation steps, and what to say about limits, see the [demo plan](docs/DEMO_PLAN.md).
+For the timed script, preparation steps, historical recording, and limitations, see the [demo plan](docs/DEMO_PLAN.md).
 
 </details>
+
 
 <a id="try-it-locally"></a>
 <a id="quick-start"></a>
@@ -180,16 +203,16 @@ Run the following commands from the repository root.
    npm --prefix web run dev
    ```
 
-Open **http://localhost:3000** for Corner Scout. The server loads the root `.env` automatically. Restart it after changing provider settings.
+Open **http://localhost:3000** for Corner Scout, or **http://localhost:3000/explorer.html** for the caption explorer. The server loads the root `.env` automatically. Restart it after changing provider settings.
 
-The web app uses checked-in observations, sampled images, and evidence clips. No npm installation is needed. Python, VAST access, and FFmpeg are needed when [preparing footage](#prepare-footage).
+The web app uses prepared observations and media. Python, VAST access, and FFmpeg are needed when [preparing footage](#prepare-footage); installing npm packages is needed for [Blob publishing](#full-collection-workflow).
 
 ### Choose the local app you need
 
 | App | Start command | Default address | Before starting |
 | --- | --- | --- | --- |
 | Web demo | `npm --prefix web run dev` | `http://localhost:3000` | W&B settings for live business searches. |
-| Python Corner Scout | `uv run python scripts/corner_scout.py` | `http://127.0.0.1:7861` | Python setup, imported SF footage, and vision tags. |
+| Python Corner Scout | `uv run python scripts/corner_scout.py` | `http://127.0.0.1:7861` | Python setup, imported footage, camera review, and vision tags. |
 | Highlight editor | `uv run python app.py` | `http://127.0.0.1:7860` | Python setup and provider settings; import footage from the UI or CLI. |
 
 <a id="prepare-footage"></a>
@@ -247,64 +270,93 @@ This deployment serves the UI at `/openapi.json`, so schema inspection may fail 
 
 </details>
 
+
 <a id="2-import-supplied-sf-streets-footage"></a>
 
-### 2. Import supplied SF Streets footage
+### 2. Import recordings
 
-Browse the supplied camera streams and import one using the exact source URI returned by the listing:
+List the supplied recordings, then use the exact `original_video` URI from your chosen entry:
 
 ```sh
 uv run highlight-agent datasets
-
-# Replace SOURCE_URI with the original_video URI from the chosen camera entry.
 uv run highlight-agent import-dataset SOURCE_URI
 ```
 
-The importer downloads the exact original objects for up to six contiguous chunks from the selected stream. It uses the shared FFmpeg renderer to prepare each object's indexed window, from zero through `chunk_duration_sec`, as H.264 at 720p and 30 fps, then concatenates those excerpts into a browser-playable recording. The original HEVC files can extend beyond their indexed windows; import excludes those uncaptioned trailing frames. Six indexed 30-second windows provide about **180 seconds**. It reuses the supplied captions without uploading footage or creating a new index. Keep the returned video ID for custom cuts; business reports discover the imported cameras automatically.
+Each import prepares **one complete recording** and reuses its supplied captions. To resumably import the full collection instead:
+
+```sh
+uv run highlight-agent import-datasets --all
+```
+
+Keep the returned video ID for custom cuts. Full imports supersede matching older excerpts in the catalog while preserving their source IDs and saved edits. The original demo's six-chunk, three-minute excerpts are historical samples.
 
 <details>
-<summary><strong>Import details: source timing, identity, and recovery</strong></summary>
+<summary><strong>Import details: source identity, timing, recovery, and storage</strong></summary>
 
-Each remote caption interval is relative to its own chunk. The importer measures the prepared excerpts and records their cumulative starts in the assembled recording; retrieval adds the matching offset to each original interval. The source player, edit plan, and evidence windows use this continuous indexed timeline. Exact original source URIs, original durations and hashes, and prepared excerpt boundaries preserve the mapping back to the supplied dataset.
+The importer downloads exact original objects, fingerprints them, and prepares each chunk's indexed window as H.264 at 720p and 30 fps. It concatenates those windows into a browser-playable recording. Original HEVC objects can include uncaptioned trailing frames; import excludes those tails and does not upload or reindex the supplied footage.
 
-Reimporting a registered source keeps its video ID. If local media is missing or changed, the importer rebuilds the registered excerpt and checks its saved source hashes, timing, and caption coverage before replacing the media.
+Remote caption times are relative to each chunk. Measured excerpt durations and cumulative starts map those intervals onto the assembled recording. Original URIs, durations, hashes, and prepared boundaries preserve the path back to the dataset.
+
+Repeating an import reuses verified checkpoints and the registered identity for the same recording. Missing or changed media is rebuilt and checked against hashes, timing, and caption coverage. Changed or missing sources never count as playable.
+
+Bulk import keeps originals in VAST and releases downloaded original caches only after the indexed recording and captions are verified and saved locally. It retains source metadata, hashes, mappings, failures, and coverage; interrupted recordings keep their download checkpoints. Use `uv run highlight-agent import-datasets --all --keep-originals` to retain downloaded originals when disk space allows.
 
 </details>
 
+
 <a id="3-run-corner-scout"></a>
 
-### 3. Tag frames and run Corner Scout
+### 3. Review cameras, tag frames, and run Scout
 
-Import each camera you want to compare with `import-dataset`; the saved demo uses five. Corner Scout includes every imported SF Streets recording that has vision tags.
+Full recordings need a **fixed-camera review before audience tagging**. Extract the first, middle, and last views:
 
 ```sh
-# Once per imported footage: one frame per indexed segment to the vision model.
+uv run python scripts/vision_tags.py --review-samples
+```
+
+Inspect the generated images, then record each recording's decision in `data/catalog/scouting-review.json`. Use the `review_key` (the recording's `video_id`) and registered `source_sha256` from `--review-samples`; separate recordings from the same stream each get their own key. Merge entries if the file already exists:
+
+```json
+{
+  "RECORDING_ID": {
+    "eligible": true,
+    "note": "First, middle, and last views show the same fixed street corner.",
+    "source_sha256": "THE_REGISTERED_CONTENT_HASH"
+  }
+}
+```
+
+Existing stream-ID keys remain valid only for their exact recorded source hash. A recording-ID decision takes precedence over its stream entry, including a rejection or mismatched hash. Both formats require an explicit matching `source_sha256`.
+
+Only mark eligible recordings after inspection. Previously reviewed legacy SF sample excerpts keep their eligibility until superseded. Then analyze the eligible recordings and launch Scout:
+
+```sh
 uv run python scripts/vision_tags.py
-
-# Optional: landmark headlines for each corner (also builds the city report).
-uv run python scripts/city_report.py
-
-# The app: type any business, or click an example.
 uv run python scripts/corner_scout.py
-# Opens on http://127.0.0.1:7861 by default.
+```
 
-# Or rank one business from the command line (prints JSON, renders reels):
+Open **http://127.0.0.1:7861**, type a business, or choose an example. Scout defaults to San Francisco. To choose another city or get a JSON ranking and rendered reels from the CLI:
+
+```sh
+uv run python scripts/corner_scout.py --city 'New York'
 uv run python scripts/corner_scout.py --business 'dog grooming salon'
 ```
 
-`vision_tags.py` sends each segment's middle frame to `google/gemma-4-31B-it` on W&B Inference and caches estimated counts per category in `data/vision/<video_id>.json` (the saved 180-frame sample took 2.7 minutes). It reuses valid cached observations and retries failed or invalid ones; failed observations stay gaps rather than zero counts.
+`vision_tags.py` also accepts `--city 'New York'`. It sends each indexed segment's midpoint frame to `google/gemma-4-31B-it` on W&B Inference and saves category estimates in `data/vision/<video_id>.json`. Valid observations are cached; failed or invalid ones are retried and remain coverage gaps until successful.
 
-For each business, the configured W&B text model (`meta-llama/Llama-3.3-70B-Instruct` in the saved runs) returns one or two **core** audiences and up to three **helpful** ones from the fixed category list. Application code scores each corner from the cached counts and writes available evidence reels to `outputs/corner-scout/<time>-<business>/rank-N/` with their `edit_plan.json`. Sparse evidence can produce fewer reels or none.
+For each business, the configured text model chooses one or two **core** audiences and up to three **helpful** ones. Application code ranks the corners and writes available evidence reels for the leading corners into `outputs/corner-scout/<time>-<business>/rank-N/`, including their `edit_plan.json`. Sparse evidence can produce fewer reels or none. Optional landmark headlines and per-camera reels come from `uv run python scripts/city_report.py`.
 
-### 4. Refresh the web snapshot
+### 4. Refresh the local web data
 
-After importing and tagging footage, export its observations, sampled images, short evidence clips, and shared motion styles:
+Export recording previews before scouting observations:
 
 ```sh
+uv run python scripts/export_collection.py
 uv run python scripts/export_vercel.py
+npm --prefix web run dev
 ```
 
-Restart `npm --prefix web run dev` to use the refreshed snapshot. The [operating guide](docs/GUIDE.md) covers setup and source timing in more detail.
+The dev server automatically uses generated local manifests and recording previews. They are excluded from Git and Vercel uploads. See [deployment](#host-on-vercel) to publish the collection.
 
 <a id="host-on-vercel"></a>
 
@@ -324,6 +376,40 @@ vercel --prod
 ```
 
 The hosted app calls W&B Inference through `/api/profile` for each business search, then scores cached observations in the browser. VAST imports, vision analysis, and FFmpeg rendering happen locally. Hosted searches play prepared evidence and do not create Weave traces.
+
+<a id="full-collection-workflow"></a>
+
+<details>
+<summary><strong>Publish the full collection with Vercel Blob</strong></summary>
+
+Complete the [footage preparation](#prepare-footage) workflow first. Connect a **public Vercel Blob store** to the project and keep `BLOB_READ_WRITE_TOKEN` in your local environment or ignored `web/.env.local`.
+
+From the repository root, install the local publishing SDK and upload collection media before scouting observations and sampled stills:
+
+```sh
+npm --prefix web ci
+uv run python scripts/export_collection.py --upload
+uv run python scripts/export_vercel.py --upload
+```
+
+The exporters reuse content-addressed assets, check existing objects and storage budgets, and replace hosted manifests only after referenced assets are available. Recording previews and sampled stills together must remain below **800 MB**. Credentials and full original recordings stay outside the website bundle; the explorer's hosted manifests reference Blob URLs.
+
+Open `/explorer.html` to search captions and inspect source intervals, filters, and actual playable coverage. Partial preparation remains visible in the catalog.
+
+</details>
+
+
+<a id="original-sample-deployment"></a>
+
+<details>
+<summary><strong>Original five-camera snapshot: deployment and refresh</strong></summary>
+
+The original snapshot used **180 vision observations across five corners**, individual five-second 480p H.264 evidence clips, and JPEG source previews. Its 82-second video and screenshot remain historical presentation assets.
+
+Full-recording Scout exports prune superseded individual clips from `web/public/`; the original five-second clip bundle is no longer retained there. The original sample's source IDs, local footage, vision caches, and saved edits remain available locally. Current exports use the selected full recordings and the [collection publishing workflow](#full-collection-workflow). Importing footage, retagging, Gradio editing, and rendering still run locally.
+
+</details>
+
 
 <a id="under-the-hood"></a>
 <a id="how-it-works"></a>
@@ -350,7 +436,7 @@ flowchart LR
     Audience -. local traces when available .-> Weave[Weave]
 ```
 
-**Models estimate and describe; application code scores and selects.** Each corner's score uses the proportion of sampled frames containing an audience, normalized against the strongest corner for that audience. Core audiences contribute 75% when helpful audiences exist, or the full score otherwise. Ordinary adults and mid-range cars are excluded as general signals. Recommendations must also pass the [three-frame evidence gate](#features).
+**Models estimate and describe; application code scores and selects.** Each corner's score uses duration-weighted audience presence, relative to other corners in the same city. Core audiences contribute 75% when helpful audiences exist, or the full score otherwise. Ordinary adults and mid-range cars are excluded as general signals. Recommendations must also pass the sample, duration, and coverage thresholds described [above](#features).
 
 Python ranking lives in [scripts/corner_scout.py](scripts/corner_scout.py); browser scoring lives in [web/public/scout.js](web/public/scout.js).
 
@@ -366,11 +452,11 @@ All four core integrations appear in the build: **VAST, NVIDIA Cosmos, W&B Infer
 | Integration | Contribution | Saved evidence |
 | --- | --- | --- |
 | **VAST** | Discover/download recordings, read indexed captions, and retrieve moments for custom briefs. | Original SF validation imported six chunks and 36 caption segments with source URIs and timestamp mappings. [Validation](docs/VALIDATION.md#current-sf-streets-workflow) · [Adapter](highlight_agent/vast.py) |
-| **NVIDIA Cosmos** | Supply precomputed visual captions for reports and the editor. | Returned rows identify `nvidia/cosmos3-nano-reasoner`. This reuses organizer-generated output; the project did not generate new Cosmos captions or reindex the footage. [Validation](docs/VALIDATION.md#current-sf-streets-workflow) |
-| **W&B Inference** | Estimate frame audiences with `google/gemma-4-31B-it`; profile businesses, summarize cameras, and rank editor candidates with a text model. | Original sample: 180 saved Gemma observations. Live text checks used `meta-llama/Llama-3.3-70B-Instruct`. [Vision pass](scripts/vision_tags.py) · [Text client](highlight_agent/inference.py) |
+| **NVIDIA Cosmos** | Supply precomputed visual captions for the explorer, reports, and editor. | Returned rows identify `nvidia/cosmos3-nano-reasoner`. This reuses organizer-generated output; the project did not generate new Cosmos captions or reindex the footage. [Validation](docs/VALIDATION.md#current-sf-streets-workflow) |
+| **W&B Inference** | Estimate frame audiences with `google/gemma-4-31B-it`; profile businesses, summarize cameras, and rank editor candidates with a text model. | Current scouting: 937 valid Gemma observations across six reviewed full recordings. The original sample retains 180 historical observations. Live text checks used `meta-llama/Llama-3.3-70B-Instruct`. [Vision pass](scripts/vision_tags.py) · [Text client](highlight_agent/inference.py) |
 | **W&B Weave** | Trace local provider and application calls when configured. | A real trace was flushed and read back; live people/traffic edits saved trace URLs. [Connection validation](docs/VALIDATION.md#verified-live-connections) · [Tracer](highlight_agent/tracing.py) |
 
-**Supporting tools:** FFmpeg/ffprobe prepare and inspect media; Gradio supplies the Python apps; Python/uv run the pipeline; Node.js/Vercel serve the web app. The Python stack uses the OpenAI-compatible SDK, HTTPX, Pydantic, and python-dotenv. Pytest, Ruff, and Playwright support validation and browser capture. See [Python dependencies](pyproject.toml) and the [web package](web/package.json).
+**Supporting tools:** FFmpeg/ffprobe prepare and inspect media; Gradio supplies the Python apps; Python/uv run the pipeline; Node.js/Vercel serve the web app. The Python stack uses the OpenAI-compatible SDK, HTTPX, Pydantic, and python-dotenv. Pytest, Ruff, and Playwright support validation/capture; Vercel Blob is optional for publishing. See [Python dependencies](pyproject.toml) and the [web package](web/package.json).
 
 Saved execution artifacts remain local in `outputs/validation/` (`live-connection-check.json`, `sf-import.json`, `sf-people.json`, and `sf-traffic.json`) and `data/vision/*.json`. They establish tool use; [validation notes](docs/VALIDATION.md) summarize the results and remaining checks.
 
@@ -379,9 +465,9 @@ Saved execution artifacts remain local in `outputs/validation/` (`live-connectio
 <details>
 <summary><strong>Inputs, outputs, and source mapping</strong></summary>
 
-**Input:** supplied SF Streets camera excerpts, up to six contiguous chunks per recording, and their existing VAST captions. Preset reports use caption signals; the editor accepts a custom brief and a duration of at most 30 seconds.
+**Input:** complete supplied recordings and their existing VAST captions. Corner Scout compares reviewed fixed street cameras within one city. Preset reports use caption signals; the editor accepts a custom brief and a duration of at most 30 seconds.
 
-**Local renderer output:** a **1280×720, 30 fps, H.264/AAC MP4** with `yuv420p` and `+faststart`. Sources without audio receive silence. The hosted app plays prepared clips around the sampled frames. It does not render a new compilation. Each new local highlight writes:
+**Local renderer output:** a **1280×720, 30 fps, H.264/AAC MP4** with `yuv420p` and `+faststart`. Sources without audio receive silence. The hosted app plays prepared clips or seeks within exported recording previews. It does not render a new compilation. Each new local highlight writes:
 
 ```text
 outputs/<edit_id>/
@@ -393,9 +479,10 @@ outputs/<edit_id>/
 
 All edit window timestamps are seconds relative to the assembled local recording. Each `SourceChunk` retains its exact remote `original_video` URI, original `source_duration` and `source_sha256`, plus the prepared excerpt's measured `duration` and cumulative `start_seconds`. Remote segment intervals are validated within the indexed chunk window before being shifted onto the assembled timeline. Revisions write a new reel, plan, and result linked to the previous edit; they reuse the existing selection evidence. Shared Python contracts live in [`highlight_agent/models.py`](highlight_agent/models.py), with `make_highlight(video_id, prompt, max_duration=30)` and `render_edit_plan(plan)` as the main service/rendering interfaces.
 
-Keep `.env`, full source recordings, local manifests, renders, and traces out of Git. `data/` and `outputs/` are ignored; the public demo snapshot and short clips in `web/public/` are intentionally checked in. Preserve related local artifacts together for offline presentation.
+Keep `.env`, full source recordings, local manifests, renders, and traces out of Git. `data/` and `outputs/` are ignored. The website contains public manifests, UI assets, and selected preview images; generated full-recording media is published through Vercel Blob. Preserve related local artifacts together for offline presentation.
 
 </details>
+
 
 <a id="prove-the-result"></a>
 <a id="results-and-validation"></a>
@@ -419,11 +506,11 @@ Python checks need the [development setup](#1-connect-the-providers). Tests cove
 
 | Check | Evidence and status |
 | --- | --- |
-| Snapshot coverage | [Exported JSON](web/public/corners.json): five corners, 36 observations each, with source references |
+| Collection and scouting coverage | [Catalog](web/public/catalog.json): 55 recordings, 612 chunks, 3,537 captions. [Scout observations](web/public/corners.json): six eligible recordings and 937 valid frames |
 | Python behavior | Tests cover provider contracts, interval selection, source integrity, persistence, revision/undo, evaluation gates, and real FFmpeg exports |
 | Hosted behavior | Node tests cover profile validation, provider failures, deterministic scoring, sparse-evidence refusal, and clip references |
 | Recorded live checks | [Validation notes](docs/VALIDATION.md) document actual imports, renders, browser checks, and timings separately from mocked tests |
-| Human quality review | **Pending:** spot-check the 13 vision estimates behind the demo (3 dog, 5 premium-car, 5 young-adult frames) before claiming measured accuracy. The highlight editor's six-case caption review is separate. |
+| Human quality review | **Pending:** check current positive and negative audience frames before claiming measured accuracy. The historical demo's 13-frame plan and the highlight editor's six-case caption review are separate. |
 
 For Corner Scout, spot-check the vision estimates behind each core audience used in the demo. List the frames where an audience was counted, extract them, and confirm by eye:
 
@@ -432,11 +519,11 @@ uv run python -c "import json; d=json.load(open('data/vision/VIDEO_ID.json')); p
 ffmpeg -loglevel error -ss SECONDS -i data/media/VIDEO_ID.mp4 -frames:v 1 check.jpg
 ```
 
-The planned check covers the three dog frames at Camera 5, five premium-car frames at Camera 1, and five young-adult frames at Camera 2. **Status: pending human review.** Report only the reviewed agreement count. The rankings in the tables above come from saved runs on 17 October 2026; rerun them after changing the vision cache or scoring code.
+Select current source IDs and positive evidence intervals from `outputs/full-example-rankings.json`; include negative frames when checking the audience estimates. The original sample's planned 13-frame check (three dog frames, five premium-car frames, five young-adult frames) belongs to the historical 15-minute demo. **Status: pending human review.** Report only the reviewed agreement count. The motion review of all eight candidate recordings is complete; it does not validate the audience labels. Rerun saved rankings after changing the vision cache or scoring code.
 
 For the [preset business report](#4-preset-business-report-caption-based), inspect `report.json`, check the segment counts against the indexed captions, and watch every evidence reel against its named source. Confirm that business tabs change the ranking, tied corners remain tied, and sparse evidence produces no recommendation. The saved example is from `outputs/business-report/20261017-140003/report.json`; generated reports and footage remain local and are ignored by Git. The counts demonstrate the report's behavior and do not establish caption accuracy or commercial demand.
 
-For the highlight editor's caption quality on SF Streets (separate from Corner Scout), replace the placeholder video ID and illustrative intervals in [`examples/evaluation-sf-streets.json`](examples/evaluation-sf-streets.json) with **two people-focused moments, two traffic-focused moments, and two ordinary street moments** reviewed in your imported recording. The profile is `sf-streets`, with labels `people`, `traffic`, and `ordinary`.
+For the secondary highlight editor's caption quality on SF Streets, replace the placeholder video ID and illustrative intervals in [`examples/evaluation-sf-streets.json`](examples/evaluation-sf-streets.json) with **two people-focused moments, two traffic-focused moments, and two ordinary street moments** reviewed in your imported recording. The profile is `sf-streets`, with labels `people`, `traffic`, and `ordinary`.
 
 ```sh
 uv run highlight-agent evaluate examples/evaluation-sf-streets.json
@@ -451,6 +538,7 @@ Unreviewed examples cannot pass. Check complete action boundaries, alignment acr
 
 </details>
 
+
 <a id="additional-workflows"></a>
 
 ## 📚 Additional workflows
@@ -462,7 +550,7 @@ These workflows share the same source references and renderer. Expand the one yo
 <details>
 <summary><strong>Preset business reports from captions</strong></summary>
 
-Before the vision pass, the first version compared corners for four preset businesses using the supplied Cosmos captions alone. With SF Streets footage imported, it produces a shareable browser page:
+Before the vision pass, the first version compared corners for four preset businesses using the supplied Cosmos captions alone. This legacy workflow requires retained original `sf-streets` sample records; it does not read new `hackathon-public` full imports. With those sample records available, it produces a shareable browser page:
 
 ```sh
 uv run python scripts/business_report.py
@@ -514,12 +602,13 @@ uv run python scripts/business_report.py \
 
 </details>
 
+
 <a id="city-report"></a>
 
 <details>
 <summary><strong>City reports and landmark summaries</strong></summary>
 
-Generate landmark headlines, caption summaries, activity tables computed by code, a reel per imported camera, and a best-moment-from-every-camera reel:
+Generate landmark headlines, caption summaries, activity tables computed by code, a reel per reviewed eligible camera, and a best-moment-from-every-camera reel:
 
 ```sh
 uv run python scripts/city_report.py
@@ -528,6 +617,7 @@ uv run python scripts/city_report.py
 The command writes `outputs/city-report/RUN/index.html`. The original SF sample's saved run took about 40 seconds; other collection sizes and provider calls can take longer.
 
 </details>
+
 
 <a id="5-direct-your-own-cut"></a>
 
@@ -540,7 +630,7 @@ After [Python/provider setup](#1-connect-the-providers), launch the Gradio edito
 uv run python app.py
 ```
 
-Open **http://127.0.0.1:7860**. Use **Browse SF Streets** and **Use dataset video** to import footage, or import from the CLI.
+Open **http://127.0.0.1:7860**. Use **Browse SF Streets** and **Use dataset video** to import footage, or import from the CLI. The picker retains the existing SF Streets labels.
 
 For a custom visual brief, use the Gradio editor or CLI:
 
@@ -557,6 +647,7 @@ uv run highlight-agent undo REVISED_EDIT_ID
 The same workflow is available in the UI: source playback, brief cards, progress, a changing timeline, evidence previews, revision, undo, and downloads. Revisions preserve the selected source windows and keep the preceding edit available for undo.
 
 </details>
+
 
 <a id="synthetic-offline-fixture"></a>
 
@@ -575,24 +666,25 @@ The offline sample uses generated color panels and manually labeled captions. It
 
 </details>
 
+
 <a id="the-demo-uses-the-same-renderer"></a>
 
 <details>
-<summary><strong>Demo production: capture and assemble with the shared renderer</strong></summary>
+<summary><strong>Historical demo production: capture and assemble with the shared renderer</strong></summary>
 
-The [demo video](#watch-the-demo) was recorded from the real web app and assembled with the renderer that makes the highlights:
+The [82-second demo and 108-second proof video](#watch-the-demo) were recorded from the original five-camera web snapshot and assembled with the shared renderer. `scripts/record_demo.py` retains that historical walkthrough, including assertions for the old 180-frame dataset and references to retired clip assets. Restore the original web snapshot before using this historical recipe; it does not replay the current full-collection app:
 
 ```sh
-npm --prefix web run dev                 # Run in a separate terminal; keep it open.
-uv run python scripts/record_demo.py      # real searches → data/rehearsal.mp4 + measured beats
+npm --prefix web run dev                 # Only after restoring the historical web snapshot.
+uv run python scripts/record_demo.py      # Historical searches and measured beats.
 uv run highlight-agent demo data/rehearsal-plan.json --output-dir outputs/demo
 ```
 
 `record_demo.py` drives the app in headless Chromium and captures every painted frame. Each search calls the live `/api/profile` endpoint, so on-screen timings are real. Captions, the pointer, and title cards are in-browser overlays, because the minimal FFmpeg build has no `drawtext`. The script writes measured beats to `data/rehearsal.json` and the fresh assembly manifest to `data/rehearsal-plan.json`. [`examples/demo-plan.json`](examples/demo-plan.json) retains the historical take's measured windows. This capture workflow needs the Python development dependencies and Chromium. Pass `--chromium PATH` if Playwright's bundled browser is missing.
 
-For the published cut, the presenter used a **Nano Banana Pro portrait** and **Veo 3.1 voice and lip-sync**. She was composited into four 8-second slots on the rehearsal. Her lines plus a synthesized, ducked music bed went in as `narration_path`, so `highlight-agent demo` mixed and assembled the final MP4. Paths resolve relative to the manifest. The three-minute final is presented live from the hosted app; see the [demo plan](docs/DEMO_PLAN.md#three-minute-final-additions).
+For the published cut, the presenter used a **Nano Banana Pro portrait** and **Veo 3.1 voice and lip-sync**. She was composited into four 8-second slots on the rehearsal. Her lines plus a synthesized, ducked music bed went in as `narration_path`, so `highlight-agent demo` mixed and assembled the final MP4. Paths resolve relative to the manifest. The three-minute final is presented live from the hosted app; see the [demo plan](docs/DEMO_PLAN.md#full-collection-walkthrough).
 
-Lead with the [Corner Scout walkthrough](#a-2-minute-walkthrough); the [demo plan](docs/DEMO_PLAN.md) has the full script. The [recording guide](demo-video-toolchain-setup.md) covers capture and assembly; the highlight editor's revise and undo commands are in [Direct your own cut](#5-direct-your-own-cut) and are not part of the demo. Use fresh requests when measured latency fits the slot; label saved runs and disclose shortened waits. Claim that the demo was assembled with the tool only after rendering the real rehearsal this way.
+For the current full collection, present the [Corner Scout walkthrough](#a-2-minute-walkthrough) live; the [demo plan](docs/DEMO_PLAN.md) has the full script. The [recording guide](demo-video-toolchain-setup.md) covers capture and assembly; the highlight editor's revise and undo commands are in [Direct your own cut](#5-direct-your-own-cut) and are not part of the demo. Use fresh requests when measured latency fits the slot; label saved runs and disclose shortened waits. Claim that the demo was assembled with the tool only after rendering the real rehearsal this way.
 
 </details>
 
@@ -610,7 +702,7 @@ Before submitting by **4:30 PM BST on 17 October 2026**:
 - Confirm recording requirements in the submission form and verify the video link without your login.
 - Keep the first-round presentation to **two minutes**; prepare a **three-minute** top-five final for **6 PM BST**.
 
-For implementation decisions and milestones, see the [build plan](HACK_PLAN.md).
+For implementation decisions, ownership, and milestones, see the [build plan](HACK_PLAN.md).
 
 </details>
 
@@ -621,17 +713,18 @@ For implementation decisions and milestones, see the [build plan](HACK_PLAN.md).
 
 | Path | Purpose |
 | --- | --- |
-| [`web/`](web/) | Node API, static UI, scoring tests, exported observations, sampled images, evidence clips, and Vercel config |
+| [`web/`](web/) | Node API, Scout/explorer UI, scoring tests, public manifests, sampled previews, and Vercel config |
 | [`scripts/corner_scout.py`](scripts/corner_scout.py) | Local business profiling, ranking, evidence rendering, and Gradio UI |
 | [`scripts/vision_tags.py`](scripts/vision_tags.py) | Cached vision observations from sampled source frames |
-| [`scripts/export_vercel.py`](scripts/export_vercel.py) | Export observations, sampled images, and short clips for the hosted app |
+| [`scripts/export_vercel.py`](scripts/export_vercel.py) | Export reviewed observations, sampled images, and full-recording evidence references |
+| [`scripts/export_collection.py`](scripts/export_collection.py) | Export the complete caption catalog and recording previews; publish media to Vercel Blob |
 | [`scripts/business_report.py`](scripts/business_report.py), [`scripts/city_report.py`](scripts/city_report.py) | Caption-based comparison reports and camera summaries |
 | [`highlight_agent/`](highlight_agent/) | Shared CLI, provider adapters, contracts, storage, selection, evaluation, and rendering |
 | [`app.py`](app.py) | Conversational highlight editor on port 7860; Corner Scout uses port 7861 |
 | [`tests/`](tests/), [`examples/`](examples/) | Python checks and editable evaluation/demo templates |
 | [`docs/GUIDE.md`](docs/GUIDE.md) | Full setup, deployment, reports, outputs, evaluation, and rehearsal instructions |
 
-Local `data/` and `outputs/` are ignored. Keep full footage, manifests, renders, traces, and `.env` out of Git; the exported snapshot, sampled images, and short clips under `web/public/` are intentionally checked in.
+Local `data/` and `outputs/` are ignored. Keep full footage, manifests, renders, traces, and `.env` out of Git; public manifests, UI assets, and selected preview images are publishable. Generated recording media stays under ignored outputs and is hosted through Vercel Blob.
 
 </details>
 

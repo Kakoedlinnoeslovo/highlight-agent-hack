@@ -1,12 +1,13 @@
-import { coreAudiences, proofFrames, initialProofFrame, validFocus, sampleClock } from './proof.js';
+import { coreAudiences, proofSamples, proofFrames, initialProofFrame, validFocus, sampleClock } from './proof.js';
+import { mediaUrl, evidenceMedia, intervalPlayer } from './media-player.js';
 
 const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
-const media = (url, extension) => typeof url === 'string' && new RegExp(`^/media/[a-zA-Z0-9_.-]+\\.${extension}$`).test(url);
+const media = (url, extension) => Boolean(mediaUrl(url, extension));
 const seconds = frame => frame.sampledAt ?? (frame.start + frame.end) / 2;
 
 export function renderProof() {
   return `<section id="cs-proof" class="cs-card cs-proof" aria-labelledby="proof-heading">
-    <div class="cs-proof-heading"><div><span class="cs-eyebrow cs-blue">See what supports the result</span><h3 id="proof-heading" tabindex="-1">Frame evidence</h3></div><div id="proof-corners" class="cs-proof-switch" aria-label="Inspect a corner"></div></div>
+    <div class="cs-proof-heading"><div><span class="cs-eyebrow cs-blue">See what supports the result</span><h3 id="proof-heading" tabindex="-1">Frame evidence</h3></div><div id="proof-corners" class="cs-proof-switch" aria-label="Inspect a recording"></div></div>
     <div id="proof-audiences" class="cs-proof-switch cs-proof-audiences" aria-label="Select a core audience"></div>
     <div class="cs-proof-claim-row"><p id="proof-claim"></p><span id="proof-view-label">Full frame</span></div>
     <div id="proof-viewport" class="cs-proof-viewport">
@@ -46,12 +47,11 @@ export function wireProof(ranking, weights, data) {
   const image = $('#proof-image');
   const video = $('#proof-context-video');
   const dialog = $('#proof-enlargement');
+  const playback = intervalPlayer(video, message => { $('#proof-media-status').textContent = message; });
 
   function stopVideo() {
     mediaSequence += 1;
-    video.pause();
-    video.removeAttribute('src');
-    video.load();
+    playback.clear();
     video.hidden = true;
     context = false;
   }
@@ -65,7 +65,7 @@ export function wireProof(ranking, weights, data) {
     $('#proof-media-status').textContent = '';
     $('#proof-image-error').hidden = true;
     $('#proof-context').textContent = '▶ Play this moment';
-    $('#proof-context').disabled = !frame || !media(frame.clip, 'mp4');
+    $('#proof-context').disabled = !frame || !evidenceMedia(frame);
     $('#proof-enlarge').disabled = true;
     image.hidden = true;
     image.removeAttribute('src');
@@ -82,11 +82,11 @@ export function wireProof(ranking, weights, data) {
         ? `${label(key)} detected in this sampled frame · model estimate`
         : `${label(key)} not detected in this sample.`;
       $('#proof-source').textContent = `${sampleClock(seconds(frame))} sampled from ${frame.source}`;
-      $('#proof-recorded').textContent = `${row.corner.camera} · Recorded ${row.corner.recorded}`;
+      $('#proof-recorded').textContent = `${row.corner.camera} · Source timestamp: ${row.corner.recorded} · timezone not supplied`;
     } else {
       image.removeAttribute('src');
       $('#proof-time').textContent = '';
-      $('#proof-selection').textContent = 'No sampled frames are available at this corner.';
+      $('#proof-selection').textContent = 'No sampled frames are available in this recording.';
       $('#proof-source').textContent = '';
       $('#proof-recorded').textContent = '';
     }
@@ -124,21 +124,24 @@ export function wireProof(ranking, weights, data) {
   }
 
   function renderSelection() {
+    const samples = proofSamples(row.corner);
     const matches = proofFrames(row.corner, key);
     $('#proof-heading').textContent = `Frame evidence · ${row.corner.camera}`;
     $('#proof-claim').textContent = `${label(key)} detected in ${matches.length} of ${row.frames} sampled frames`;
     $('#proof-positive-count').textContent = `${matches.length} matching frame${matches.length === 1 ? '' : 's'}`;
     $('#proof-sample-count').textContent = `All ${row.frames} samples`;
-    $('#proof-sampling-note').textContent = key === 'dog'
+    const samplingNote = key === 'dog'
       ? 'Sampled every five seconds. The same animal may appear in several frames.'
       : 'Sampled every five seconds. The same person or vehicle may appear in several frames.';
-    $('#proof-corners').innerHTML = rows.map((item, index) => `<button type="button" data-proof-corner="${escape(item.corner.id)}" aria-pressed="${item === row}">${index ? 'Runner-up' : 'Top corner'} · ${escape(item.corner.camera)}</button>`).join('');
+    $('#proof-sampling-note').textContent = samples.length < row.corner.frames.length
+      ? `Counts and markers use valid, non-overlapping sample windows. ${samplingNote}` : samplingNote;
+    $('#proof-corners').innerHTML = rows.map((item, index) => `<button type="button" data-proof-corner="${escape(item.corner.id)}" aria-pressed="${item === row}">${index ? 'Runner-up' : 'Top recording'} · ${escape(item.corner.camera)}</button>`).join('');
     $('#proof-audiences').innerHTML = audiences.map(audience => `<button type="button" data-proof-audience="${escape(audience)}" aria-pressed="${audience === key}">${escape(label(audience))}</button>`).join('');
     $('#proof-audiences').hidden = audiences.length < 2;
     $('#proof-thumbnails').innerHTML = matches.length ? matches.map(item => `<button type="button" data-proof-frame="${escape(item.segment_id)}" data-sample-seconds="${seconds(item)}" aria-pressed="false" aria-label="Inspect ${escape(label(key))} sample at ${sampleClock(seconds(item))}">${media(item.image, 'jpg') ? `<img src="${escape(item.image)}" loading="lazy" alt=""><span class="cs-thumb-error" hidden>Image unavailable</span>` : '<span class="cs-thumb-error">Image unavailable</span>'}<span>${sampleClock(seconds(item))}</span></button>`).join('')
-      : `<p class="cs-proof-empty">No ${escape(label(key).toLowerCase())} detected in the sampled frames at this corner. Inspect any sample below.</p>`;
+      : `<p class="cs-proof-empty">No ${escape(label(key).toLowerCase())} detected in the sampled frames in this recording. Inspect any sample below.</p>`;
     $('#proof-thumbnails').scrollLeft = 0;
-    $('#proof-markers').innerHTML = row.corner.frames.map((item, index) => `<button type="button" data-proof-frame="${escape(item.segment_id)}" data-sample-seconds="${seconds(item)}" class="${item.counts[key] > 0 ? 'cs-proof-positive' : ''}" aria-pressed="false" aria-label="${sampleClock(seconds(item))}: ${escape(label(key))} ${item.counts[key] > 0 ? 'detected' : 'not detected'}"><span>${index + 1}</span></button>`).join('');
+    $('#proof-markers').innerHTML = samples.map((item, index) => `<button type="button" data-proof-frame="${escape(item.segment_id)}" data-sample-seconds="${seconds(item)}" class="${item.counts[key] > 0 ? 'cs-proof-positive' : ''}" aria-pressed="false" aria-label="${sampleClock(seconds(item))}: ${escape(label(key))} ${item.counts[key] > 0 ? 'detected' : 'not detected'}"><span>${index + 1}</span></button>`).join('');
     showFrame(initialProofFrame(row.corner, key));
   }
 
@@ -163,7 +166,7 @@ export function wireProof(ranking, weights, data) {
       renderSelection();
       $('#proof-audiences').querySelector(`[aria-pressed="true"]`)?.focus({ preventScroll: true });
     } else if (button.dataset.proofFrame) {
-      const selected = row.corner.frames.find(item => item.segment_id === button.dataset.proofFrame);
+      const selected = proofSamples(row.corner).find(item => item.segment_id === button.dataset.proofFrame);
       if (selected) showFrame(selected, true);
     } else if (button.id === 'proof-detail') {
       detail = !detail;
@@ -177,7 +180,7 @@ export function wireProof(ranking, weights, data) {
         $('#proof-image-loading').hidden = true;
         $('#proof-image-error').hidden = true;
         video.hidden = false;
-        video.src = frame.clip;
+        playback.set(evidenceMedia(frame), true);
         video.setAttribute('aria-label', `${row.corner.camera}, ${sampleClock(frame.start)} to ${sampleClock(frame.end)}`);
         $('#proof-context').textContent = 'Back to frame';
         $('#proof-time').textContent = `${sampleClock(frame.start)}–${sampleClock(frame.end)}`;

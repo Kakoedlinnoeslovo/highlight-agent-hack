@@ -1,9 +1,15 @@
-"""Exercise hosted proof interactions against the exported sample and real media."""
+"""Exercise proof interactions with isolated test data and seekable real media.
+
+The routed snapshot preserves the original proof scenarios without depending on
+the changing public collection, local export overrides, or historical assets.
+"""
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -95,11 +101,65 @@ def browser():
 
 @pytest.fixture(scope="module")
 def snapshot():
-    return json.loads((WEB / "public" / "corners.json").read_text())
+    cameras = []
+    for number in range(1, 6):
+        recording = hashlib.sha256(f"proof-recording-{number}".encode()).hexdigest()
+        media = f"/recordings/{recording}.mp4"
+        frames = []
+        for index in range(36):
+            image = hashlib.sha256(f"proof-image-{number}-{index}".encode()).hexdigest()
+            start, end = index * 5, (index + 1) * 5
+            frames.append({
+                "segment_id": f"proof-camera-{number}-segment-{index}",
+                "counts": {
+                    "dog": int(number == 5 and index in {1, 10, 20}),
+                    "premium_car": int((number == 1 and index < 28)
+                                       or (number == 5 and index < 20)),
+                },
+                "start": start, "end": end, "sampledAt": start + 2.5,
+                "source": f"test-recording-{number}.mp4 @ {start}–{end} s",
+                "mediaUrl": media, "clip": f"{media}#t={start},{end}",
+                "image": f"/recording-images/{image}.jpg",
+            })
+        if number == 5:
+            frames[1]["focus"] = {
+                "dog": {"x": 0.125, "y": 0.5, "width": 0.5, "height": 0.5},
+            }
+        cameras.append({
+            "id": f"proof-camera-{number}", "camera": f"Camera {number}",
+            "headline": "Isolated browser-test recording", "recorded": "Fixture timestamp",
+            "location": "San Francisco", "duration": 180, "expected_seconds": 180,
+            "coverage": 1, "eligible": True, "frames": frames,
+        })
+    return {
+        "audiences": {"dog": "Dogs", "premium_car": "Premium cars"},
+        "coreThreshold": 0.75, "minFrames": 3, "minAnalyzedSeconds": 180,
+        "minCoverage": 0.9, "cap": 4, "examples": [DOG, LUXURY, MIXED],
+        "corners": cameras,
+    }
+
+
+@pytest.fixture(scope="module")
+def browser_media(tmp_path_factory):
+    if not shutil.which("ffmpeg"):
+        pytest.skip("Proof playback tests require FFmpeg.")
+    directory = tmp_path_factory.mktemp("proof-browser-media")
+    video, image = directory / "recording.mp4", directory / "sample.jpg"
+    subprocess.run([
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-f", "lavfi", "-i", "color=c=0x1f2f46:s=32x18:r=2", "-t", "180",
+        "-an", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+        "-g", "2", "-movflags", "+faststart", str(video),
+    ], check=True, capture_output=True, timeout=30)
+    subprocess.run([
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-i", str(video), "-frames:v", "1", str(image),
+    ], check=True, capture_output=True, timeout=10)
+    return {"video": video.read_bytes(), "image": image.read_bytes()}
 
 
 @pytest.fixture
-def proof_page(browser: Browser, hosted_url):
+def proof_page(browser: Browser, hosted_url, snapshot, browser_media):
     context = browser.new_context(viewport={"width": 1280, "height": 720})
     page = context.new_page()
     errors = []
@@ -114,7 +174,31 @@ def proof_page(browser: Browser, hosted_url):
             body=json.dumps(result or {"error": "Unknown browser-test business."}),
         )
 
+    def recording_media(route):
+        payload = browser_media["video"]
+        start, end, status = 0, len(payload) - 1, 200
+        headers = {"Accept-Ranges": "bytes"}
+        requested = route.request.headers.get("range")
+        if requested:
+            match = re.fullmatch(r"bytes=(\d+)-(\d*)", requested)
+            if not match or int(match[1]) >= len(payload):
+                route.fulfill(status=416, headers={"Content-Range": f"bytes */{len(payload)}"})
+                return
+            start = int(match[1])
+            end = min(int(match[2]), end) if match[2] else end
+            status = 206
+            headers["Content-Range"] = f"bytes {start}-{end}/{len(payload)}"
+        route.fulfill(status=status, headers=headers, content_type="video/mp4",
+                      body=payload[start:end + 1])
+
     page.route("**/api/profile", mock_profile)
+    page.route("**/corners.json", lambda route: route.fulfill(
+        content_type="application/json", body=json.dumps(snapshot),
+    ))
+    page.route("**/recordings/*.mp4", recording_media)
+    page.route("**/recording-images/*.jpg", lambda route: route.fulfill(
+        content_type="image/jpeg", body=browser_media["image"],
+    ))
     page.goto(hosted_url)
     expect(page.locator("#cs-go")).to_be_enabled()
     yield page
@@ -160,12 +244,19 @@ def play_context(page: Page, expected):
     page.locator("#proof-context").click()
     video = page.locator("#proof-context-video")
     expect(video).to_be_visible()
-    expect(video).to_have_attribute("src", expected["clip"])
+    expect(video).to_have_attribute("src", expected["mediaUrl"])
     page.wait_for_function(
         """() => { const video = document.querySelector('#proof-context-video');
         return video.readyState >= 2 && video.duration > 0; }"""
     )
-    assert 0 < video.evaluate("video => video.duration") <= 6
+    assert video.evaluate("video => video.duration") == pytest.approx(180, abs=0.1)
+    page.wait_for_function(
+        """start => {
+            const video = document.querySelector('#proof-context-video');
+            return !video.seeking && video.currentTime >= start;
+        }""", arg=expected["start"], timeout=5000,
+    )
+    assert expected["start"] <= video.evaluate("video => video.currentTime") <= expected["end"]
     expect(page.locator("#proof-context")).to_have_text("Back to frame")
     return video.element_handle()
 
@@ -205,7 +296,8 @@ def test_dog_proof_connects_claim_crop_negative_source_and_real_context(proof_pa
     expect(page.locator("#proof-source")).to_have_text(
         f"0:17.5 sampled from {negative['source']}"
     )
-    expect(page.locator("#proof-recorded")).to_contain_text("Camera 5 · Recorded")
+    expect(page.locator("#proof-recorded")).to_contain_text("Camera 5 · Source timestamp:")
+    expect(page.locator("#proof-recorded")).to_contain_text("timezone not supplied")
     video = play_context(page, negative)
     expect(page.locator("#proof-time")).to_have_text("0:15.0–0:20.0")
     page.locator("#proof-context").click()
@@ -303,6 +395,27 @@ def test_new_search_and_reset_release_the_previous_context_video(proof_page, sna
     expect(page.locator("#business")).to_have_value("")
     expect(page.locator("#business")).to_be_focused()
     expect(page.locator("#results")).to_contain_text("See who walks past.")
+
+
+def test_full_recording_context_seeks_and_stops_at_the_selected_final_interval(proof_page, snapshot):
+    page = proof_page
+    final = sample(corner(snapshot, "Camera 5"), 177.5)
+    search(page, DOG)
+    page.locator("#proof-markers [data-sample-seconds='177.5']").click()
+    expect_loaded_image(page, final)
+    play_context(page, final)
+    video = page.locator("#proof-context-video")
+    video.evaluate("video => { video.playbackRate = 4; }")
+    page.wait_for_function(
+        """end => {
+            const video = document.querySelector('#proof-context-video');
+            return video.paused && Math.abs(video.currentTime - end) < 0.05;
+        }""", arg=final["end"], timeout=5000,
+    )
+    assert video.evaluate("video => video.duration") > 6
+    assert video.evaluate("video => video.currentTime") == pytest.approx(final["end"], abs=0.05)
+    page.locator("#proof-context").click()
+    expect_loaded_image(page, final)
 
 
 def test_missing_still_and_context_show_explicit_errors_then_recover(proof_page, snapshot):

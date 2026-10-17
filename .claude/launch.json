@@ -12,6 +12,13 @@
       "runtimeExecutable": "uv",
       "runtimeArgs": ["run", "python", "scripts/corner_scout.py"],
       "port": 7861
+    },
+    {
+      "name": "corner-scout-web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "web", "run", "dev"],
+      "port": 3000,
+      "autoPort": false
     }
   ]
 }

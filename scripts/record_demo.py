@@ -1,6 +1,11 @@
-"""Record a genuine Corner Scout walkthrough for the demo video.
+"""Record the historical 15-minute SF snapshot walkthrough for the demo videos.
 
-Drives the real web app in headless Chromium, captures every painted frame over
+Requires the original five-camera, 180-frame web snapshot and its retired clip
+assets to be restored first. Assertions and captions describe that historical
+dataset; this script does not replay the current full-collection application.
+The published 82-second demo and 108-second proof video remain historical.
+
+Drives that snapshot in headless Chromium, captures every painted frame over
 the DevTools screencast, and writes ``data/rehearsal.mp4`` plus measured beat
 timestamps in ``data/rehearsal.json``. Searches hit the live ``/api/profile``
 endpoint; nothing is mocked. Captions, the pointer, and title cards are
@@ -546,7 +551,7 @@ def assembly_manifest(source: Path, destination: Path, beats: list[dict], durati
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--url", default="http://localhost:3000", help="Corner Scout web app to record.")
+    parser.add_argument("--url", default="http://localhost:3000", help="URL serving the restored historical 180-frame Corner Scout snapshot.")
     parser.add_argument("--output", type=Path, default=ROOT / "data" / "rehearsal.mp4")
     parser.add_argument(
         "--manifest", type=Path,

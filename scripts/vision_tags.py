@@ -1,4 +1,4 @@
-"""Tag one frame per indexed segment of every imported SF Streets camera.
+"""Tag every indexed segment of reviewed fixed street-camera recordings.
 
 Captions rarely name car brands or describe who people are, so a W&B-hosted vision
 model looks at each segment's middle frame and estimates counts for a fixed audience
@@ -12,12 +12,13 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import json
 import re
 import subprocess
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import city_report as city
@@ -56,6 +57,7 @@ PROMPT = (
     "cannot recognise. Each person or vehicle counts once, in its best-fitting key.\n"
     + "\n".join(f"- {key}: {hint}" for key, (_, hint) in TAXONOMY.items())
 )
+PROMPT_VERSION = hashlib.sha256(PROMPT.encode()).hexdigest()
 
 
 def _frame(source: Path, seconds: float) -> str:
@@ -107,7 +109,10 @@ def _validate_observation(raw: object) -> dict:
 
 
 def tag_frame(client: OpenAI, source: Path, seconds: float) -> dict:
-    image = _frame(source, seconds)
+    try:
+        image = _frame(source, seconds)
+    except Exception as error:
+        return {"counts": None, "notable": "", "error": type(error).__name__}
     for attempt in range(2):
         try:
             response = client.chat.completions.create(
@@ -132,27 +137,32 @@ def tag_frame(client: OpenAI, source: Path, seconds: float) -> dict:
     raise AssertionError("unreachable")
 
 
-def tag_video(service: HighlightService, client: OpenAI, video, workers: int) -> Path:
-    HighlightService._verify_source(video)
-    destination = service.config.data_dir / "vision" / f"{video.id}.json"
-    moments = city._moments(service, video)
-    cached = {}
-    if destination.exists():
-        try:
-            manifest = read_json(destination)
-        except json.JSONDecodeError:
-            manifest = {}
-        if (
-            isinstance(manifest, dict)
-            and manifest.get("model") == VISION_MODEL
-            and manifest.get("video_id") == video.id
-            and isinstance(manifest.get("frames"), list)
-        ):
-            cached = {
-                frame["segment_id"]: frame
-                for frame in manifest["frames"]
-                if isinstance(frame, dict) and isinstance(frame.get("segment_id"), str)
-            }
+def _fingerprint(video, moment) -> str:
+    return hashlib.sha256(json.dumps({
+        "source_sha256": video.content_sha256, "model": VISION_MODEL,
+        "prompt_version": PROMPT_VERSION, "segment_id": moment.id,
+        "start": moment.start_seconds, "end": moment.end_seconds,
+    }, sort_keys=True).encode()).hexdigest()
+
+
+def valid_cached_frames(video, moments, manifest: object) -> dict[str, dict]:
+    """Only known successful observations of these exact source bytes are evidence."""
+    if not (
+        isinstance(manifest, dict) and manifest.get("model") == VISION_MODEL
+        and manifest.get("video_id") == video.id and isinstance(manifest.get("frames"), list)
+    ):
+        return {}
+    # Existing demo caches predate fingerprints. Full imports always require them.
+    legacy = video.dataset == "sf-streets" and "source_sha256" not in manifest
+    if not legacy and (
+        manifest.get("source_sha256") != video.content_sha256
+        or manifest.get("prompt_version") != PROMPT_VERSION
+    ):
+        return {}
+    cached = {
+        frame["segment_id"]: frame for frame in manifest["frames"]
+        if isinstance(frame, dict) and isinstance(frame.get("segment_id"), str)
+    }
     results = {}
     for moment in moments:
         frame = cached.get(moment.id, {})
@@ -161,45 +171,115 @@ def tag_video(service: HighlightService, client: OpenAI, video, workers: int) ->
             or frame.get("start_seconds") != moment.start_seconds
             or frame.get("end_seconds") != moment.end_seconds
             or frame.get("seconds") != (moment.start_seconds + moment.end_seconds) / 2
+            or (not legacy and frame.get("fingerprint") != _fingerprint(video, moment))
         ):
             continue
         try:
-            results[moment.id] = _validate_observation(
+            _validate_observation(
                 {**frame["counts"], "notable": frame.get("notable")}
             )
         except ValueError:
             continue
+        results[moment.id] = frame
+    return results
+
+
+def tag_video(service: HighlightService, client: OpenAI, video, workers: int) -> Path:
+    HighlightService._verify_source(video)
+    if not city.scouting_eligible(service, video):
+        raise ValueError("Recording needs a fixed-camera review before audience analysis.")
+    destination = service.config.data_dir / "vision" / f"{video.id}.json"
+    moments = city._moments(service, video)
+    try:
+        manifest = read_json(destination)
+    except (OSError, ValueError):
+        manifest = {}
+    results = valid_cached_frames(video, moments, manifest)
     pending = [moment for moment in moments if moment.id not in results]
     if not pending and destination.exists():
         return destination
-    if pending:
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            tagged = pool.map(
-                lambda m: tag_frame(
-                    client, video.local_path, (m.start_seconds + m.end_seconds) / 2
-                ),
-                pending,
-            )
-            results.update((moment.id, result) for moment, result in zip(pending, tagged))
-    frames = [
-        {
-            "segment_id": m.id,
-            "start_seconds": m.start_seconds,
-            "end_seconds": m.end_seconds,
+    for moment in moments:
+        if moment.id in results:
+            results[moment.id] = {**results[moment.id], "fingerprint": _fingerprint(video, moment)}
+
+    def save():
+        frames = [results.get(m.id, {
+            "segment_id": m.id, "start_seconds": m.start_seconds, "end_seconds": m.end_seconds,
             "seconds": (m.start_seconds + m.end_seconds) / 2,
-            **results[m.id],
+            "fingerprint": _fingerprint(video, m), "counts": None, "notable": "",
+            "error": "Pending",
+        }) for m in moments]
+        write_json(destination, {
+            "model": VISION_MODEL, "video_id": video.id, "source_sha256": video.content_sha256,
+            "prompt_version": PROMPT_VERSION, "frames": frames,
+        })
+
+    save()
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {
+            pool.submit(tag_frame, client, video.local_path,
+                        (moment.start_seconds + moment.end_seconds) / 2): moment
+            for moment in pending
         }
-        for m in moments
-    ]
-    write_json(destination, {"model": VISION_MODEL, "video_id": video.id, "frames": frames})
+        for future in as_completed(futures):
+            moment = futures[future]
+            try:
+                result = future.result()
+            except Exception as error:
+                result = {"counts": None, "notable": "", "error": type(error).__name__}
+            results[moment.id] = {
+                "segment_id": moment.id, "start_seconds": moment.start_seconds,
+                "end_seconds": moment.end_seconds,
+                "seconds": (moment.start_seconds + moment.end_seconds) / 2,
+                "fingerprint": _fingerprint(video, moment), **result,
+            }
+            save()  # Atomic per completion: an interruption loses at most an in-flight call.
     return destination
+
+
+def review_samples(service: HighlightService, videos: list) -> list[dict]:
+    """Extract first/middle/last stills for a human motion review; never auto-approve."""
+    destination = service.config.data_dir / "catalog" / "review-frames"
+    destination.mkdir(parents=True, exist_ok=True)
+    samples = []
+    for video in videos:
+        HighlightService._verify_source(video)
+        stem = video.id
+        seconds = [min(0.5, video.duration / 4), video.duration / 2, max(0, video.duration - 0.5)]
+        images = []
+        for label, point in zip(("first", "middle", "last"), seconds):
+            path = destination / f"{stem}-{video.content_sha256[:12]}-{label}.jpg"
+            if not path.exists():
+                city._thumbnail(video.local_path, point, path)
+            images.append({"seconds": point, "path": str(path)})
+        samples.append({
+            "review_key": video.id, "stream_id": video.stream_id or video.id,
+            "video_id": video.id, "camera": city._camera_name(video),
+            "city": city._city_name(video), "source_sha256": video.content_sha256,
+            "eligible": city.scouting_eligible(service, video), "samples": images,
+        })
+    write_json(destination / "manifest.json", samples)
+    return samples
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--workers", type=int, default=6)
+    parser.add_argument("--city", help="Analyze only this city (default: all reviewed cities)")
+    parser.add_argument("--video-id", action="append", help="Analyze/review a specific recording")
+    parser.add_argument("--review-samples", action="store_true",
+                        help="Extract first/middle/last stills without inference or approval")
     args = parser.parse_args(argv)
+    if args.workers < 1:
+        parser.error("--workers must be positive")
     service = HighlightService()
+    candidates = [v for v in city.preferred_recordings(service)
+                  if v.index_status == "ready" and city.scouting_candidate(v)
+                  and (not args.city or city._city_name(v) == city.city_label(args.city))
+                  and (not args.video_id or v.id in args.video_id)]
+    if args.review_samples:
+        print(json.dumps(review_samples(service, candidates), indent=2))
+        return 0
     config = service.config
     client = OpenAI(
         api_key=config.wandb_api_key,
@@ -208,17 +288,19 @@ def main(argv: list[str] | None = None) -> int:
         timeout=90,
         max_retries=0,
     )
-    videos = sorted(
-        (
-            v
-            for v in service.list_videos()
-            if v.dataset == "sf-streets" and v.index_status == "ready"
-        ),
-        key=city._camera_name,
-    )
+    videos = [v for v in candidates if city.scouting_eligible(service, v)]
+    skipped = len(candidates) - len(videos)
+    if skipped:
+        print(f"{skipped} candidate recordings await fixed-camera review.", file=sys.stderr)
+    failed_videos = []
     for video in videos:
         started = time.perf_counter()
-        path = tag_video(service, client, video, args.workers)
+        try:
+            path = tag_video(service, client, video, args.workers)
+        except Exception as error:
+            failed_videos.append(video.id)
+            print(f"{video.id}: {type(error).__name__}: {error}", file=sys.stderr)
+            continue
         frames = read_json(path)["frames"]
         failed = sum(frame["counts"] is None for frame in frames)
         print(
@@ -226,7 +308,7 @@ def main(argv: list[str] | None = None) -> int:
             f"{time.perf_counter() - started:.0f} s",
             file=sys.stderr,
         )
-    return 0
+    return int(bool(failed_videos))
 
 
 if __name__ == "__main__":

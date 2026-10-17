@@ -10,11 +10,118 @@ import random
 import shutil
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from highlight_agent.models import Moment, VideoRecord
 from highlight_agent.service import ServiceError
+
+
+def full_export_fixture(exporter, monkeypatch, tmp_path):
+    item = corner(tmp_path)
+    item["video"] = item["video"].model_copy(update={"dataset": "hackathon-public"})
+    item.update(city="New York", location="New York", expected_seconds=10,
+                analyzed_seconds=5, coverage=0.5, eligible=True)
+    service = SimpleNamespace(config=SimpleNamespace(output_dir=tmp_path / "out"))
+    from highlight_agent.service import HighlightService
+    def factory():
+        return service
+    factory._verify_source = HighlightService._verify_source
+    monkeypatch.setattr(exporter, "HighlightService", factory)
+    monkeypatch.setattr(exporter.scout, "load_corners", lambda _: [item])
+    monkeypatch.setattr(exporter.scout, "corner_previews", lambda *_: [])
+    monkeypatch.setattr(exporter.scout.city, "_source_ref", lambda *_: "chunk.mp4 @ 0–5 s")
+    monkeypatch.setattr(exporter, "export_clip", lambda *_: pytest.fail("Full recordings must not emit segment clips"))
+    monkeypatch.setattr(exporter, "export_image", lambda _source, _time, target: target.write_bytes(b"sampled JPEG"))
+    web = tmp_path / "web"
+    public = web / "public"
+    public.mkdir(parents=True)
+    remote = "https://example.public.blob.vercel-storage.com/recordings/full.mp4"
+    local = "/recordings/" + "a" * 64 + ".mp4"
+    for name, url in (("catalog.json", remote), ("catalog.local.json", local)):
+        (public / name).write_text(json.dumps({"recordings": [
+            {"id": item["video"].id, "media": {"url": url}},
+        ]}))
+    return web, remote, local
+
+
+def test_full_scout_export_uses_one_recording_and_blob_images_with_offline_references(
+    exporter, monkeypatch, tmp_path,
+):
+    web, remote, local = full_export_fixture(exporter, monkeypatch, tmp_path)
+    jobs = []
+    class Publisher:
+        def __init__(self, _):
+            pass
+        def publish(self, files):
+            jobs.extend(files.values())
+            return {key: f"https://example.public.blob.vercel-storage.com/frames/{key}.jpg"
+                    for key in files}
+    monkeypatch.setattr(exporter, "BlobPublisher", Publisher)
+    payload = exporter.export_site(web, upload=True)
+    frame = payload["corners"][0]["frames"][0]
+    assert frame["mediaUrl"] == remote and frame["clip"] == remote + "#t=0.0,5.0"
+    assert frame["image"].startswith("https://example.public.blob.vercel-storage.com/frames/")
+    assert len(jobs) == 1 and jobs[0].suffix == ".jpg"
+    assert "imageKey" not in frame
+    offline = json.loads((web / "public/corners.local.json").read_text())
+    offline_frame = offline["corners"][0]["frames"][0]
+    assert offline_frame["mediaUrl"] == local
+    assert offline_frame["image"].startswith("/recording-images/")
+    assert offline["corners"][0]["coverage"] == 0.5
+    assert str(tmp_path) not in (web / "public/corners.json").read_text()
+
+
+def test_failed_full_scout_image_upload_preserves_previous_hosted_snapshot(
+    exporter, monkeypatch, tmp_path,
+):
+    web, _, _ = full_export_fixture(exporter, monkeypatch, tmp_path)
+    hosted = web / "public/corners.json"
+    hosted.write_text('{"previous": true}\n')
+    before = hosted.read_bytes()
+    class Publisher:
+        def __init__(self, _):
+            pass
+        def publish(self, _):
+            raise RuntimeError("interrupted image upload")
+    monkeypatch.setattr(exporter, "BlobPublisher", Publisher)
+    with pytest.raises(RuntimeError, match="interrupted image upload"):
+        exporter.export_site(web, upload=True)
+    assert hosted.read_bytes() == before
+    assert (web / "public/corners.local.json").is_file()
+
+
+def test_reviewed_crop_survives_repeated_full_exports_only_for_identical_images(
+    exporter, monkeypatch, tmp_path,
+):
+    web, _, _ = full_export_fixture(exporter, monkeypatch, tmp_path)
+    public = web / "public"
+    legacy = public / "media" / ("deadbeef-" + "0" * 20 + ".jpg")
+    legacy.parent.mkdir()
+    legacy.write_bytes(b"sampled JPEG")
+    focus = {"dog": {"x": 0.2, "y": 0.4, "width": 0.2, "height": 0.3}}
+    (public / "corners.json").write_text(json.dumps({"corners": [{"frames": [
+        {"image": f"/media/{legacy.name}", "focus": focus},
+    ]}]}))
+
+    class Publisher:
+        def __init__(self, _):
+            pass
+
+        def publish(self, files):
+            return {key: f"https://example.public.blob.vercel-storage.com/frames/{key}.jpg"
+                    for key in files}
+
+    monkeypatch.setattr(exporter, "BlobPublisher", Publisher)
+    for _ in range(2):
+        frame = exporter.export_site(web, upload=True)["corners"][0]["frames"][0]
+        assert frame["focus"] == focus
+        assert frame["image_sha256"] == hashlib.sha256(b"sampled JPEG").hexdigest()
+    monkeypatch.setattr(exporter, "export_image",
+                        lambda _source, _time, target: target.write_bytes(b"different JPEG"))
+    frame = exporter.export_site(web, upload=True)["corners"][0]["frames"][0]
+    assert "focus" not in frame
 
 
 @pytest.fixture
@@ -338,3 +445,30 @@ console.log(JSON.stringify(profiles.map(weights => rank(sample.corners, weights,
             assert [item["frame"]["segment_id"] for item in actual["best"]] == [
                 frame["segment_id"] for _, _, frame in expected["best"]
             ]
+
+
+@pytest.mark.parametrize("upload", [False, True])
+def test_zero_valid_frames_full_recording_keeps_unknown_coverage_and_explicit_publication(
+    exporter, monkeypatch, tmp_path, upload,
+):
+    web, _, _ = full_export_fixture(exporter, monkeypatch, tmp_path)
+    item = exporter.scout.load_corners(None)[0]
+    item.update(frames=[], analyzed_seconds=0, coverage=0)
+    hosted = web / "public/corners.json"
+    hosted.write_text('{"previous": "verified hosted snapshot"}\n')
+    before = hosted.read_bytes()
+    class ForbiddenPublisher:
+        def __init__(self, _):
+            pytest.fail("Zero sampled images must not trigger Blob requests.")
+    monkeypatch.setattr(exporter, "BlobPublisher", ForbiddenPublisher)
+
+    payload = exporter.export_site(web, upload=upload)
+
+    local = json.loads((web / "public/corners.local.json").read_text())
+    assert local["corners"][0]["frames"] == []
+    assert local["corners"][0]["analyzed_seconds"] == local["corners"][0]["coverage"] == 0
+    assert payload["corners"][0]["coverage"] == 0
+    if upload:
+        assert json.loads(hosted.read_text())["corners"][0]["coverage"] == 0
+    else:
+        assert hosted.read_bytes() == before
