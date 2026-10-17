@@ -94,6 +94,29 @@ def fake_encoder(video, destination):
     return {"duration": video.duration, "size": destination.stat().st_size}
 
 
+def test_catalog_reports_bounded_accumulated_normalization_deficit(service):
+    chunks = [chunk("short-rounded", index) for index in range(20)]
+    inventory(service, chunks)
+    video = register(service, chunks)
+    for index, source in enumerate(video.source_chunks):
+        source.start_seconds = index * 4.98
+        source.duration = 4.98
+    video.duration = 20 * 4.98
+    service._save_video(video)
+    rows = read_json(service._index_path(video.id))
+    for row, source in zip(rows, video.source_chunks, strict=True):
+        row["start_seconds"] = source.start_seconds
+        row["end_seconds"] = source.start_seconds + source.duration
+    write_json(service._index_path(video.id), rows)
+
+    catalog = collection.build_catalog(service, {collection.media_key(video): "/rounding.mp4"})
+
+    assert catalog["coverage"]["complete"]
+    assert catalog["coverage"]["expected"]["seconds"] == 100
+    assert catalog["coverage"]["playable"]["seconds"] == pytest.approx(99.6)
+    assert catalog["coverage"]["duration_tolerance_seconds"] == pytest.approx(0.4)
+
+
 def test_offline_inventory_fallback_exports_all_612_chunks_and_3537_captions(service, tmp_path, monkeypatch):
     # Reproduce the saved collection's cardinalities without requiring private
     # local media, a connected backend, or the ignored inventory artifact.

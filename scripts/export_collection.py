@@ -223,6 +223,7 @@ def build_catalog(service: HighlightService, urls: dict[str, str], local=False) 
         if video.dataset == "hackathon-public" and video.index_status == "ready":
             imported[video.stream_id].append(video)
     recordings, failures = [], []
+    normalization_deficit = 0.0
     for stream_id, chunks in grouped:
         video = next((item for item in imported[stream_id]
                       if _matches_recording(item, stream_id, chunks)), None)
@@ -253,6 +254,11 @@ def build_catalog(service: HighlightService, urls: dict[str, str], local=False) 
                 HighlightService._verify_source(video)
                 # Use measured local intervals rather than accumulating nominal lengths.
                 rows = _indexed_rows(service, video, chunks)
+                deficits = [max(0.0, raw["chunk_duration_sec"] - prepared.duration)
+                            for prepared, raw in zip(video.source_chunks, chunks, strict=True)]
+                if any(deficit > 0.1 + 1e-6 for deficit in deficits):
+                    raise ValueError("A normalized source is shorter than its indexed timing tolerance.")
+                normalization_deficit += sum(deficits)
                 segments = [{
                     "id": row["id"], "start": row["start_seconds"], "end": row["end_seconds"],
                     "caption": row["caption"],
@@ -289,6 +295,7 @@ def build_catalog(service: HighlightService, urls: dict[str, str], local=False) 
     return {
         "version": 1, "exportedAt": datetime.now(UTC).isoformat(),
         "coverage": {"expected": expected, "imported": present, "playable": playable,
+                     "duration_tolerance_seconds": max(0.1, normalization_deficit),
                      "complete": expected["chunks"] > 0
                      and playable["chunks"] == expected["chunks"]
                      and playable["segments"] == declared_segments and not failures,

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exportedAt": "2026-10-17T16:08:38.738242+00:00",
+  "exportedAt": "2026-10-17T16:43:30.563999+00:00",
   "coverage": {
     "expected": {
       "recordings": 55,
@@ -20,6 +20,7 @@
       "segments": 3537,
       "seconds": 17676.4
     },
+    "duration_tolerance_seconds": 0.1,
     "complete": true,
     "failures": []
   },

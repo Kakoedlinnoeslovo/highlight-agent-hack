@@ -48,11 +48,20 @@ export function coverageSummary(coverage) {
   const expected = coverage?.expected || {};
   const imported = coverage?.imported || {};
   const playable = coverage?.playable || {};
+  const declaredTolerance = coverage?.duration_tolerance_seconds;
+  // New exporters account for validated rounding loss at each source. Legacy
+  // manifests retain their original tenth-second allowance for the collection.
+  const validTolerance = declaredTolerance === undefined
+    || (typeof declaredTolerance === 'number' && Number.isFinite(declaredTolerance)
+      && declaredTolerance >= 0 && declaredTolerance <= Number(expected.chunks) * 0.1 + 1e-6);
+  const tolerance = Math.max(0.1, declaredTolerance ?? 0.1);
+  const durationCovered = seconds => Number.isFinite(Number(seconds))
+    && Number(seconds) + tolerance >= Number(expected.seconds) - 1e-6;
   // The manifest is complete only when every expected source and caption is represented.
   const keys = ['recordings', 'chunks', 'segments'];
-  const complete = coverage?.complete === true && !(coverage.failures || []).length && keys.every(key => Number(expected[key]) > 0
+  const complete = coverage?.complete === true && validTolerance && !(coverage.failures || []).length && keys.every(key => Number(expected[key]) > 0
     && Number(imported[key]) === Number(expected[key]) && Number(playable[key]) === Number(expected[key]))
-    && Number(expected.seconds) > 0 && Number(imported.seconds) >= Number(expected.seconds) - 0.1
-    && Number(playable.seconds) >= Number(expected.seconds) - 0.1;
+    && Number(expected.seconds) > 0 && durationCovered(imported.seconds)
+    && durationCovered(playable.seconds);
   return { expected, imported, playable, complete };
 }

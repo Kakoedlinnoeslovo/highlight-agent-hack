@@ -70,6 +70,41 @@ test('only source-complete and fully playable manifests can display complete cov
   assert.equal(coverageSummary().complete, false);
 });
 
+test('validated source rounding may accumulate without hiding missing playback duration', () => {
+  const chunks = Array.from({ length: 20 }, () => ({ nominal: 30, measured: 29.98 }));
+  const expected = { recordings: 4, chunks: chunks.length, segments: 120,
+    seconds: chunks.reduce((sum, chunk) => sum + chunk.nominal, 0) };
+  const measured = { ...expected, seconds: chunks.reduce((sum, chunk) => sum + chunk.measured, 0) };
+  const coverage = { expected, imported: measured, playable: measured, complete: true, failures: [],
+    duration_tolerance_seconds: chunks.reduce((sum, chunk) => sum + chunk.nominal - chunk.measured, 0) };
+  assert.ok(expected.seconds - measured.seconds > 0.1);
+  assert.equal(coverageSummary(coverage).complete, true);
+  assert.equal(coverageSummary({ ...coverage, duration_tolerance_seconds: undefined }).complete, false,
+    'legacy manifests do not gain an unchecked per-source allowance');
+  for (const field of ['imported', 'playable']) {
+    assert.equal(coverageSummary({ ...coverage, [field]: { ...measured, seconds: measured.seconds - 5 } }).complete, false,
+      'a missing interval cannot be explained by the declared rounding loss');
+  }
+  assert.equal(coverageSummary({ ...coverage, complete: false }).complete, false);
+  assert.equal(coverageSummary({ ...coverage, failures: ['missing source'] }).complete, false);
+  assert.equal(coverageSummary({ ...coverage, playable: { ...measured, chunks: 19 } }).complete, false);
+  assert.equal(coverageSummary({ ...coverage, imported: { ...measured, segments: 119 } }).complete, false);
+});
+
+test('duration budgets must be finite, nonnegative, and bounded by the validated source count', () => {
+  const totals = { recordings: 1, chunks: 20, segments: 120, seconds: 600 };
+  const full = { expected: totals, imported: totals, playable: totals, complete: true };
+  for (const budget of [null, '0.4', -1, NaN, Infinity, 2.01, 1000]) {
+    assert.equal(coverageSummary({ ...full, duration_tolerance_seconds: budget }).complete, false,
+      `invalid or excessive duration budget: ${budget}`);
+  }
+  assert.equal(coverageSummary({ ...full, duration_tolerance_seconds: 2 }).complete, true);
+  assert.equal(coverageSummary({ ...full, duration_tolerance_seconds: 0 }).complete, true);
+  const measured = { ...totals, seconds: 590 };
+  assert.equal(coverageSummary({ ...full, imported: measured, playable: measured,
+    duration_tolerance_seconds: 1000 }).complete, false);
+});
+
 test('media references allow local recordings and Vercel Blob while rejecting executable or unrelated URLs', () => {
   for (const value of ['/media/full.mp4', '/local-media/full.mp4', 'https://example.public.blob.vercel-storage.com/recording.mp4']) {
     assert.equal(mediaUrl(value), value);
