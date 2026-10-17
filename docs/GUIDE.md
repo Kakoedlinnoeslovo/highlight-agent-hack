@@ -271,7 +271,7 @@ The planned check covers the three dog frames at Camera 5, five premium-car fram
 
 For the business report, inspect `report.json`, check the segment counts against the indexed captions, and watch every evidence reel against its named source. Confirm that business tabs change the ranking, tied corners remain tied, and sparse evidence produces no recommendation. The saved example above is from `outputs/business-report/20261017-140003/report.json`; generated reports and footage remain local and are ignored by Git. The counts demonstrate the report's behavior and do not establish caption accuracy or commercial demand.
 
-For SF Streets quality, replace the placeholder video ID and illustrative intervals in [`examples/evaluation-sf-streets.json`](../examples/evaluation-sf-streets.json) with **two people-focused moments, two traffic-focused moments, and two ordinary street moments** reviewed in your imported recording. The profile is `sf-streets`, with labels `people`, `traffic`, and `ordinary`.
+For the highlight editor's caption quality on SF Streets (separate from Corner Scout), replace the placeholder video ID and illustrative intervals in [`examples/evaluation-sf-streets.json`](../examples/evaluation-sf-streets.json) with **two people-focused moments, two traffic-focused moments, and two ordinary street moments** reviewed in your imported recording. The profile is `sf-streets`, with labels `people`, `traffic`, and `ordinary`.
 
 ```sh
 uv run highlight-agent evaluate examples/evaluation-sf-streets.json
@@ -306,11 +306,11 @@ uv run python scripts/record_demo.py      # real searches → data/rehearsal.mp4
 uv run highlight-agent demo data/rehearsal-plan.json --output-dir outputs/demo
 ```
 
-`record_demo.py` drives the app in headless Chromium and captures every painted frame. Each search calls the live `/api/profile` endpoint, so on-screen timings are real. Captions, the pointer, and title cards are in-browser overlays, because the minimal FFmpeg build has no `drawtext`. The script writes measured beats to `data/rehearsal.json` and the matching assembly plan to `data/rehearsal-plan.json`. [`examples/demo-plan.json`](../examples/demo-plan.json) preserves the measured windows from the earlier published take, recorded before the UI redesign. Pass `--chromium PATH` if Playwright's bundled browser is missing. For the separate 108-second captioned cut, follow the [frame-proof recording guide](PROOF_REVEAL.md).
+`record_demo.py` drives the app in headless Chromium and captures every painted frame. Each search calls the live `/api/profile` endpoint, so on-screen timings are real. Captions, the pointer, and title cards are in-browser overlays, because the minimal FFmpeg build has no `drawtext`. The script writes measured beats to `data/rehearsal.json` and the matching assembly plan to `data/rehearsal-plan.json`. [`examples/demo-plan.json`](../examples/demo-plan.json) preserves the measured windows of the published 82-second take, recorded before the UI redesign with an earlier, shorter version of this script; the current script records the 108-second frame-proof walkthrough. Pass `--chromium PATH` if Playwright's bundled browser is missing. For the separate 108-second captioned cut, follow the [frame-proof recording guide](PROOF_REVEAL.md).
 
-For the published cut, an AI presenter (a Nano Banana Pro portrait, voiced and lip-synced with Veo 3.1) was composited into four 8-second slots on the rehearsal. Her lines plus a synthesized music bed, ducked under the voice, went in as `narration_path`, so `highlight-agent demo` mixed and assembled the final MP4. Paths resolve relative to the manifest. [`examples/demo-plan-extended.json`](../examples/demo-plan-extended.json) is still a template for the three-minute final.
+For the published cut, an AI presenter (a Nano Banana Pro portrait, voiced and lip-synced with Veo 3.1) was composited into four 8-second slots on the rehearsal. Her lines plus a synthesized music bed, ducked under the voice, went in as `narration_path`, so `highlight-agent demo` mixed and assembled the final MP4. Paths resolve relative to the manifest. The three-minute final is presented live from the hosted app; see the [demo plan](DEMO_PLAN.md#three-minute-final-additions).
 
-Lead with the [Corner Scout walkthrough](../README.md#a-2-minute-walkthrough); the [demo plan](DEMO_PLAN.md) has the full script. The [editor demo guide](DEMO_SCRIPT.md) covers optional revision and undo, and the [recording/toolchain guide](../demo-video-toolchain-setup.md) covers capture and assembly. Use fresh requests when measured latency fits the slot; label saved runs and disclose shortened waits. Claim that the demo was assembled with the tool only after rendering the real rehearsal this way.
+Lead with the [Corner Scout walkthrough](../README.md#a-2-minute-walkthrough); the [demo plan](DEMO_PLAN.md) has the full script. The [recording guide](../demo-video-toolchain-setup.md) covers capture and assembly; the highlight editor's revise and undo commands are in [Direct your own cut](#5-direct-your-own-cut) and are not part of the demo. Use fresh requests when measured latency fits the slot; label saved runs and disclose shortened waits. Claim that the demo was assembled with the tool only after rendering the real rehearsal this way.
 
 ### Hackathon handoff
 
@@ -323,4 +323,4 @@ Before submitting by **4:30 PM BST on 17 October 2026**:
 - Confirm recording requirements in the submission form and verify the video link without your login.
 - Keep the first-round presentation to **two minutes**; prepare a **three-minute** top-five final for **6 PM BST**.
 
-For implementation decisions, ownership, and milestones, see the [build plan](../HACK_PLAN.md).
+For implementation decisions and milestones, see the [build plan](../HACK_PLAN.md).

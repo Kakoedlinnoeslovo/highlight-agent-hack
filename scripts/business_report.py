@@ -364,9 +364,10 @@ bicycle:</p><blockquote>“{e(t["sentence"])}”</blockquote><code>{e(t["source"
     )
     destination.write_text(
         f"""<!doctype html><html lang=en><head><meta charset=utf-8>
-<meta name=viewport content="width=device-width,initial-scale=1"><title>Corner Scout</title>
+<meta name=viewport content="width=device-width,initial-scale=1"><title>Preset business report · caption baseline</title>
 <style>{CSS}</style></head><body><main>
 <h1>Where should I open my…</h1>
+<p class=muted>Caption-based baseline for four preset businesses. For any business, use Corner Scout.</p>
 <div class=muted>{len(report["corners"])} San Francisco corners · {report["minutes"]:.0f} minutes of footage ·
 built in {report["seconds"]:.0f} s{trace}</div>
 <nav role=tablist>{"".join(tabs)}</nav>{"".join(panels)}

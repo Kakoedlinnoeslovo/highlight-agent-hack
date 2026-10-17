@@ -3,7 +3,8 @@
 A text model turns a free-text business type into weights over the fixed audience
 taxonomy from ``vision_tags.py`` (people types, car price tiers, dogs, ...). Code ranks
 every corner from cached vision-model frame counts and picks the evidence segments; the
-shared renderer cuts an evidence reel for each top corner. The model never ranks.
+shared renderer cuts evidence reels for the top two corners (only the top one when
+it refuses). The model never ranks.
 
     uv run python scripts/vision_tags.py                     # once: tag frames
     uv run python scripts/corner_scout.py                    # app on 127.0.0.1:7861

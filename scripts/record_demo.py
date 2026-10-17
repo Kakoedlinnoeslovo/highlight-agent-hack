@@ -6,12 +6,14 @@ timestamps in ``data/rehearsal.json``. Searches hit the live ``/api/profile``
 endpoint; nothing is mocked. Captions, the pointer, and title cards are
 in-browser overlays because the minimal FFmpeg build has no ``drawtext``.
 The accompanying ``*-plan.json`` contains the measured, unshortened scenes
-for the product's demo assembler. The walkthrough targets 110 seconds and
-rejects an assembly plan longer than the two-minute submission ceiling.
+for the product's demo assembler. The walkthrough targets 110 seconds (the
+frame-proof cut) and rejects an assembly plan longer than the two-minute submission
+ceiling. ``examples/demo-plan.json`` keeps the measured plan of the published
+82-second demo, recorded with an earlier, shorter version of this walkthrough.
 
     cd web && npm run dev            # in another terminal
-    uv run python scripts/record_demo.py --manifest examples/demo-plan.json
-    uv run highlight-agent demo examples/demo-plan.json --output-dir outputs/demo
+    uv run python scripts/record_demo.py --manifest outputs/demo/proof-reveal/demo-plan.json
+    uv run highlight-agent demo outputs/demo/proof-reveal/demo-plan.json --output-dir outputs/demo
 """
 
 from __future__ import annotations
@@ -157,7 +159,7 @@ HOW_CARD = """
 <div class="steps">
   <div class="step"><b>01 · Footage</b><h3>Real street video</h3><p>SF Streets recordings and NVIDIA Cosmos captions, served by VAST. 5 corners, 15 minutes.</p></div>
   <div class="step"><b>02 · Who passes</b><h3>Vision reads frames</h3><p>Gemma 4 vision on W&amp;B Inference reads one frame every 5 s: people types, car tiers, cyclists, dogs.</p></div>
-  <div class="step"><b>03 · Your business</b><h3>Code ranks corners</h3><p>A W&amp;B text model picks your core customers. Code scores every corner and cuts the evidence.</p></div>
+  <div class="step"><b>03 · Your business</b><h3>Code ranks corners</h3><p>A W&amp;B text model picks your core customers. Code scores every corner and links each count to its source clip.</p></div>
 </div>
 <p class="fine">Models estimate. Code ranks. Vision observations are cached; each business profile is generated when you search.</p>
 <p class="fine">Three minutes per corner, recorded at different times. Sampled frames can show the same person or dog.</p>

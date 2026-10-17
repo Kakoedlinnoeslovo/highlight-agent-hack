@@ -35,7 +35,7 @@ Built for **Real-Time Video Agents Hack**, London · **17 October 2026**.
 
 The video shows real searches from the **original five-camera San Francisco sample**: dog grooming, luxury car detailing, and a kids' toy store with too little evidence for a recommendation. Each search calls the live profile endpoint; the displayed timings are measured. The presenter is AI-generated and the music is synthesized. [Recording and assembly details](#the-demo-uses-the-same-renderer).
 
-**Inspect the frame proof:** click an audience count to see every matching still, inspect all sampled frames, and play the surrounding moment. [Watch the 108-second frame-proof walkthrough](docs/assets/corner-scout-proof-reveal.mp4) or read the [proof controls and recording guide](docs/PROOF_REVEAL.md).
+**Deep dive: the frame proof.** Click an audience count to see every matching still, inspect all sampled frames, and play the surrounding moment. [Watch the 108-second frame-proof walkthrough](docs/assets/corner-scout-proof-reveal.mp4) or read the [proof controls and recording guide](docs/PROOF_REVEAL.md). The 82-second video above is the main demo.
 
 ![Original SF sample: Camera 5 ranks first for a dog grooming salon, with dogs in 3 of 36 sampled frames and playable evidence](docs/assets/corner-scout-dog-grooming.png)
 
@@ -49,7 +49,7 @@ The video shows real searches from the **original five-camera San Francisco samp
 | --- | --- | --- |
 | Find a location for a business | **Find my corner** | Rankings of the five sampled SF corners, audience matches, and playable source evidence. |
 | Inspect a recommendation | **Evidence viewer** | Sampled frames, audience counts, and the exact source moment behind a match. |
-| Make a custom reel | **Local highlight editor** | Visual briefs, source previews, revision, undo, and downloadable MP4s. |
+| Make a custom reel (secondary tool) | **Local highlight editor** | Visual briefs, source previews, revision, undo, and downloadable MP4s. Not part of the Corner Scout demo. |
 
 **Saved SF snapshot:** 5 corners · 15 minutes of footage · 180 observations. Each corner has three minutes of footage, sampled once per five-second segment. The checked-in snapshot was exported on 17 October 2026.
 
@@ -120,7 +120,7 @@ At Camera 1, **25 of 36 captions mention a bicycle**. Counting caption words wou
 
 1. **Describe the business.** The text model proposes its target audiences. Explicit supported audience terms in the description, such as “dog” or “student”, are enforced as core by application rules.
 2. **Compare the observations.** Camera 5 has dogs in three frames; Camera 4 has one; the other three cameras have none in this sample.
-3. **Inspect the ranking.** In the saved run, Camera 5 scores **80/100**. The UI shows the core and helpful audiences and each corner's observed mix.
+3. **Inspect the ranking.** In the saved run, Camera 5 scores **80/100**; live runs land within a few points because the helpful audiences the model adds can change. The UI shows the core and helpful audiences and each corner's observed mix.
 4. **Inspect the evidence.** Click the count to see all matching sampled frames and the full sampling grid. For dogs, inspect 0:02.5, 0:07.5, and 0:12.5; switch the reviewed detail crop to the full frame, then play the surrounding clip. The same dog can appear in several samples. Local renders also save an `edit_plan.json` with exact source windows.
 
 The score is a relative audience match within this sample. It is not an 80% probability that the business will succeed.
@@ -135,7 +135,9 @@ The score is a relative audience match within this sample. It is not an 80% prob
 1. **Click** **Dog grooming salon**. Camera 5 wins; point at “Dogs · core” and “Dogs in 3/36 frames”, then play the evidence clips.
 2. **Type** **Luxury car detailing**. Camera 1 wins on premium cars: same footage, different corner.
 3. **Click** **Kids' toy store**. “Not enough evidence”: it refuses to guess.
-4. **In the local app**, open the Weave trace on the result when available. The hosted demo does not create Weave traces.
+4. **Click** **Bike repair shop**. Camera 1's captions mention a bicycle in 25 of 36 segments, but its frames show a parked kick scooter and zero cyclists: that is why Corner Scout reads frames.
+
+Present the [live app](https://corner-scout-rouge.vercel.app); this is the same walkthrough as the [82-second demo](https://drive.google.com/file/d/1zZgiQSG6cm3ZWqlijK4rIugzymr1lPrq/view?usp=sharing). The hosted app does not create Weave traces; the local pipeline does.
 
 The saved winners apply to the original sample. For the full script, preparation steps, and what to say about limits, see the [demo plan](docs/DEMO_PLAN.md).
 
@@ -421,7 +423,7 @@ Python checks need the [development setup](#1-connect-the-providers). Tests cove
 | Python behavior | Tests cover provider contracts, interval selection, source integrity, persistence, revision/undo, evaluation gates, and real FFmpeg exports |
 | Hosted behavior | Node tests cover profile validation, provider failures, deterministic scoring, sparse-evidence refusal, and clip references |
 | Recorded live checks | [Validation notes](docs/VALIDATION.md) document actual imports, renders, browser checks, and timings separately from mocked tests |
-| Human quality review | **Pending:** spot-check the vision estimates and complete the six-case caption review before claiming measured accuracy |
+| Human quality review | **Pending:** spot-check the 13 vision estimates behind the demo (3 dog, 5 premium-car, 5 young-adult frames) before claiming measured accuracy. The highlight editor's six-case caption review is separate. |
 
 For Corner Scout, spot-check the vision estimates behind each core audience used in the demo. List the frames where an audience was counted, extract them, and confirm by eye:
 
@@ -434,7 +436,7 @@ The planned check covers the three dog frames at Camera 5, five premium-car fram
 
 For the [preset business report](#4-preset-business-report-caption-based), inspect `report.json`, check the segment counts against the indexed captions, and watch every evidence reel against its named source. Confirm that business tabs change the ranking, tied corners remain tied, and sparse evidence produces no recommendation. The saved example is from `outputs/business-report/20261017-140003/report.json`; generated reports and footage remain local and are ignored by Git. The counts demonstrate the report's behavior and do not establish caption accuracy or commercial demand.
 
-For SF Streets quality, replace the placeholder video ID and illustrative intervals in [`examples/evaluation-sf-streets.json`](examples/evaluation-sf-streets.json) with **two people-focused moments, two traffic-focused moments, and two ordinary street moments** reviewed in your imported recording. The profile is `sf-streets`, with labels `people`, `traffic`, and `ordinary`.
+For the highlight editor's caption quality on SF Streets (separate from Corner Scout), replace the placeholder video ID and illustrative intervals in [`examples/evaluation-sf-streets.json`](examples/evaluation-sf-streets.json) with **two people-focused moments, two traffic-focused moments, and two ordinary street moments** reviewed in your imported recording. The profile is `sf-streets`, with labels `people`, `traffic`, and `ordinary`.
 
 ```sh
 uv run highlight-agent evaluate examples/evaluation-sf-streets.json
@@ -453,7 +455,7 @@ Unreviewed examples cannot pass. Check complete action boundaries, alignment acr
 
 ## 📚 Additional workflows
 
-These workflows share the same source references and renderer. Expand the one you need, or use the [demo plan](docs/DEMO_PLAN.md), [editor walkthrough](docs/DEMO_SCRIPT.md), and [evidence viewer guide](docs/PROOF_REVEAL.md). The [operating guide](docs/GUIDE.md) remains available as a standalone reference.
+These workflows share the same source references and renderer. Expand the one you need, or use the [demo plan](docs/DEMO_PLAN.md) and [evidence viewer guide](docs/PROOF_REVEAL.md). The [operating guide](docs/GUIDE.md) remains available as a standalone reference.
 
 <a id="4-preset-business-report-caption-based"></a>
 
@@ -588,9 +590,9 @@ uv run highlight-agent demo data/rehearsal-plan.json --output-dir outputs/demo
 
 `record_demo.py` drives the app in headless Chromium and captures every painted frame. Each search calls the live `/api/profile` endpoint, so on-screen timings are real. Captions, the pointer, and title cards are in-browser overlays, because the minimal FFmpeg build has no `drawtext`. The script writes measured beats to `data/rehearsal.json` and the fresh assembly manifest to `data/rehearsal-plan.json`. [`examples/demo-plan.json`](examples/demo-plan.json) retains the historical take's measured windows. This capture workflow needs the Python development dependencies and Chromium. Pass `--chromium PATH` if Playwright's bundled browser is missing.
 
-For the published cut, the presenter used a **Nano Banana Pro portrait** and **Veo 3.1 voice and lip-sync**. She was composited into four 8-second slots on the rehearsal. Her lines plus a synthesized, ducked music bed went in as `narration_path`, so `highlight-agent demo` mixed and assembled the final MP4. Paths resolve relative to the manifest. [`examples/demo-plan-extended.json`](examples/demo-plan-extended.json) is still a template for the three-minute final.
+For the published cut, the presenter used a **Nano Banana Pro portrait** and **Veo 3.1 voice and lip-sync**. She was composited into four 8-second slots on the rehearsal. Her lines plus a synthesized, ducked music bed went in as `narration_path`, so `highlight-agent demo` mixed and assembled the final MP4. Paths resolve relative to the manifest. The three-minute final is presented live from the hosted app; see the [demo plan](docs/DEMO_PLAN.md#three-minute-final-additions).
 
-Lead with the [Corner Scout walkthrough](#a-2-minute-walkthrough); the [demo plan](docs/DEMO_PLAN.md) has the full script. The [editor demo guide](docs/DEMO_SCRIPT.md) covers optional revision and undo, and the [recording/toolchain guide](demo-video-toolchain-setup.md) covers capture and assembly. Use fresh requests when measured latency fits the slot; label saved runs and disclose shortened waits. Claim that the demo was assembled with the tool only after rendering the real rehearsal this way.
+Lead with the [Corner Scout walkthrough](#a-2-minute-walkthrough); the [demo plan](docs/DEMO_PLAN.md) has the full script. The [recording guide](demo-video-toolchain-setup.md) covers capture and assembly; the highlight editor's revise and undo commands are in [Direct your own cut](#5-direct-your-own-cut) and are not part of the demo. Use fresh requests when measured latency fits the slot; label saved runs and disclose shortened waits. Claim that the demo was assembled with the tool only after rendering the real rehearsal this way.
 
 </details>
 
@@ -608,7 +610,7 @@ Before submitting by **4:30 PM BST on 17 October 2026**:
 - Confirm recording requirements in the submission form and verify the video link without your login.
 - Keep the first-round presentation to **two minutes**; prepare a **three-minute** top-five final for **6 PM BST**.
 
-For implementation decisions, ownership, and milestones, see the [build plan](HACK_PLAN.md).
+For implementation decisions and milestones, see the [build plan](HACK_PLAN.md).
 
 </details>
 
@@ -657,4 +659,4 @@ Local `data/` and `outputs/` are ignored. Keep full footage, manifests, renders,
 
 Open an [issue](https://github.com/Kakoedlinnoeslovo/highlight-agent-hack/issues) with the workflow, command, expected behavior, and sanitized error output. Include source windows and model IDs when relevant. For a pull request, explain the behavior change and run the Python or Node checks for the affected workflow. Never include credentials or private source footage.
 
-Maintained by [Kakoedlinnoeslovo](https://github.com/Kakoedlinnoeslovo). For project context, see the [build plan](HACK_PLAN.md), [validation record](docs/VALIDATION.md), [Corner Scout demo plan](docs/DEMO_PLAN.md), [editor demo script](docs/DEMO_SCRIPT.md), and [recording guide](demo-video-toolchain-setup.md).
+Maintained by [Kakoedlinnoeslovo](https://github.com/Kakoedlinnoeslovo). For project context, see the [build plan](HACK_PLAN.md), [validation record](docs/VALIDATION.md), [Corner Scout demo plan](docs/DEMO_PLAN.md), and [recording guide](demo-video-toolchain-setup.md).

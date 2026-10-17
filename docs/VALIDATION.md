@@ -1,16 +1,38 @@
 # Implementation validation — 17 October 2026
 
-## Current PR verification
+## Corner Scout (the demo)
 
-- `uv run pytest -q`: **225 passed in 9.74 seconds**. Ruff passed, and `uv build` produced the source distribution and wheel for **0.1.0**.
+**Automated checks on `main` (17 October, commit `28f3681`):** `uv run pytest -q` passed **279 tests in 44.93 seconds**, `uv run ruff check .` passed, and `npm test` in `web/` passed **30 of 30**. The web tests cover profile validation, provider failures, deterministic scoring, published thresholds, sparse-evidence refusal, and clip references; [`PROOF_REVEAL.md`](PROOF_REVEAL.md) lists the browser checks for the frame proof.
+
+**Snapshot.** [`web/public/corners.json`](../web/public/corners.json) holds five corners with 36 sampled-frame observations each (180 in total, 180 seconds of footage per corner), produced by `google/gemma-4-31B-it` on W&B Inference. The vision pass took 2.7 minutes and is cached locally in `data/vision/`. The published `minFrames` (3) and core weight (0.75) match the Python app.
+
+**Live site, 17 October around 15:30 BST.** Real searches on [corner-scout-rouge.vercel.app](https://corner-scout-rouge.vercel.app), each with a fresh W&B profile call:
+
+| Business | Result | Core observation | Time shown |
+| --- | --- | --- | --- |
+| Dog grooming salon | Camera 5 · 81/100 | Dogs in 3/36 frames | 2.9 s |
+| Luxury car detailing (typed) | Camera 1 · 85/100 | Premium cars in 28/36 frames | 2.1 s |
+| Kids' toy store | Not enough evidence | Families with children in 1/36 frames | 2.5 s |
+
+The saved runs in the [README results](../README.md#results-and-validation) reached the same winners; dog grooming scored 80 there because the model added different helpful audiences.
+
+**Demo recording.** The submitted 82-second video is one continuous take of the web app with live profile calls (2.1, 1.9, and 2.5 seconds on screen), assembled by `highlight-agent demo` from measured beats in [`examples/demo-plan.json`](../examples/demo-plan.json). The presenter and music were added in post and are disclosed in the README.
+
+**Pending:** the human spot-check of the 13 vision estimates behind the demo (3 dog, 5 premium-car, 5 young-adult frames). Automated checks and saved runs do not establish vision accuracy.
+
+## Shared engine checks
+
+- An earlier run of the suite passed 225 tests; Ruff passed, and `uv build` produced the source distribution and wheel for **0.1.0**.
 - Browser checks of the business report regenerated from saved artifacts confirmed all four tabs, the bike-shop and café winners, the transit-kiosk tie, and the dog-shop abstention. No page overflow or console errors were observed. This reused saved results rather than making new provider requests.
 - Added regression checks cover recovery of registered dataset media, invalid or failed vision observations and cache retries, report count wording, tied rankings, and complete provider failure.
 
-Human review of captions and vision estimates, the submission recording, and submission itself remain pending. Automated checks and saved-report playback do not complete those steps.
+Human review of captions and vision estimates, and the submission itself, remain pending; the submission recording is done. Automated checks and saved-report playback do not complete those steps.
 
-## Current SF Streets workflow
+<a id="current-sf-streets-workflow"></a>
 
-The application now uses the supplied public SF Streets dataset. The live picker excludes earlier gameplay recordings, and the former YouTube downloader exits without downloading or uploading anything.
+## SF Streets import and highlight editor
+
+The import below is shared with Corner Scout; the briefs, revision, and undo belong to the secondary highlight editor, which is not part of the demo. The application uses the supplied public SF Streets dataset. The live picker excludes earlier gameplay recordings, and the former YouTube downloader exits without downloading or uploading anything.
 
 - Live discovery returned 122 indexed chunks across five SF street cameras. Camera 5's first six chunks were imported without uploading or reindexing.
 - Exact original objects were downloaded and fingerprinted. Their indexed 30-second windows were prepared with the shared renderer, excluding uncaptioned encoder tails. The registered timeline is 180 seconds; the assembled MP4 probes at 180.021 seconds, within one frame of that timeline.
