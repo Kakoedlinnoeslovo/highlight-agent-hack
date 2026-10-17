@@ -1,0 +1,41 @@
+# Local credentials and configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Python environments and generated files
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+build/
+dist/
+
+# Source footage, rendered clips, and model weights
+data/
+outputs/
+*.mp4
+*.mov
+*.mkv
+*.avi
+*.webm
+*.pt
+*.onnx
+
+# Local traces and caches
+wandb/
+.weave/
+.cache/
+
+# Editor and operating system files
+.DS_Store
+.idea/
+.vscode/
