@@ -13,7 +13,7 @@ with ranked results and playable source clips.
 ![Node.js 24](https://img.shields.io/badge/Node.js-24-5FA04E?logo=nodedotjs&logoColor=white)
 ![W&B Inference](https://img.shields.io/badge/W%26B-Inference-FCC400?logo=weightsandbiases&logoColor=black)
 
-[**Try the live demo**](https://corner-scout-rouge.vercel.app) · [**Quick start**](#quick-start) · [**How it works**](#how-it-works) · [**Results**](#results-and-validation) · [**Operating guide**](docs/GUIDE.md)
+[**Try the live demo**](https://corner-scout-rouge.vercel.app) · [**Quick start**](#quick-start) · [**Tools used**](#tools-used) · [**How it works**](#how-it-works) · [**Results**](#results-and-validation) · [**Operating guide**](docs/GUIDE.md)
 
 </div>
 
@@ -189,20 +189,26 @@ Open **http://localhost:3000** and try a business. The app has no npm dependenci
 | Test local plumbing without API credentials | [Synthetic offline fixture](docs/GUIDE.md#synthetic-offline-fixture), using generated color panels |
 | Resolve connection or workspace errors | [Provider settings and troubleshooting](docs/GUIDE.md#1-connect-the-providers) |
 
-## Models and external services
+<a id="models-and-external-services"></a>
 
-**The hosted app needs W&B Inference; reproducing the full local pipeline also needs the assigned VAST deployment and local media tools.**
+## Tools used
 
-| Tool | Role | Where it runs |
+**We used all four core integrations in the build plan: VAST, NVIDIA Cosmos, W&B Inference, and W&B Weave.** These come from three sponsor providers: VAST, NVIDIA, and Weights & Biases. Their contributions span footage preparation, business searches, and the local editor.
+
+| Integration | What we used it for | Evidence from saved runs |
 | --- | --- | --- |
-| **VAST** | Supplies original camera chunks, indexed segment windows, and caption retrieval | Local import and editor |
-| **NVIDIA Cosmos** | Supplies the dataset's existing visual captions for reports and custom briefs | Upstream dataset ingestion; this repo reuses its captions |
-| **W&B Inference** | `google/gemma-4-31B-it` estimates frame audiences; the configured text model profiles businesses and supports the other workflows | Vision pass locally; text inference locally and through the hosted API |
-| **W&B Weave** | Traces provider and application calls when configured | Local workflows |
-| **FFmpeg + ffprobe** | Prepare indexed excerpts, extract frames, render reels, and measure media | Local workflows |
-| **Gradio / Vercel** | Serve the local Python apps / hosted Node app | Local machine / hosted demo |
+| **VAST** | Discover and download the supplied recordings, read indexed caption segments, and retrieve moments for custom briefs. | The live SF Streets validation imported six source chunks with 36 caption segments, preserving original source URIs and timestamp mappings. See [validation](docs/VALIDATION.md#current-sf-streets-workflow) and the [VAST adapter](highlight_agent/vast.py). |
+| **NVIDIA Cosmos** | Reuse the organizer's existing visual captions for preset business reports, city summaries, and the highlight editor. | Returned caption rows identify **`nvidia/cosmos3-nano-reasoner`**. This is use of precomputed Cosmos output; we did not generate new Cosmos captions or reindex the supplied footage. See [validation](docs/VALIDATION.md#current-sf-streets-workflow). |
+| **W&B Inference** | Run **`google/gemma-4-31B-it`** on sampled frames and a text model to turn a business description into audiences, summarize cameras, and rank editor candidates. | The original five-camera sample has **180 saved Gemma observations** in `data/vision/`. Live text checks used **`meta-llama/Llama-3.3-70B-Instruct`**. See the [vision pass](scripts/vision_tags.py), [text client](highlight_agent/inference.py), and [connection validation](docs/VALIDATION.md#verified-live-connections). |
+| **W&B Weave** | Trace local provider and application calls, with trace links on results when available. | A real trace was flushed and read back from Weave; the live people and traffic edits also saved trace URLs. See [connection validation](docs/VALIDATION.md#verified-live-connections) and the [tracer](highlight_agent/tracing.py). |
 
-The saved text-model runs used `meta-llama/Llama-3.3-70B-Instruct`; choose a model available to your account through `WANDB_MODEL`. See [`.env.example`](.env.example) and the [provider guide](docs/GUIDE.md#1-connect-the-providers) for configuration. Actual artifacts and traces establish which sponsor tools executed in a run.
+**Where the tools run:** VAST imports and Gemma frame analysis happen during preparation. The hosted site makes a live W&B text request for each business search and scores exported observations in browser code. The local editor also performs VAST retrieval, Weave tracing when available, and FFmpeg rendering. Hosted searches reuse prepared media and do not create Weave traces.
+
+**Supporting tools:** FFmpeg and ffprobe prepare and inspect media; Gradio provides the local apps; Python and uv run the pipeline; Node.js and Vercel serve the hosted app. The Python stack uses the OpenAI-compatible SDK, HTTPX, Pydantic, and python-dotenv; pytest, Ruff, and Playwright support validation and browser capture. See the [dependency manifest](pyproject.toml), [web package](web/package.json), and [architecture](#how-it-works). The demo's Nano Banana Pro portrait and Veo 3.1 presenter are described in the [recording guide](docs/GUIDE.md#the-demo-uses-the-same-renderer).
+
+The saved execution artifacts are local: `outputs/validation/live-connection-check.json`, `sf-import.json`, `sf-people.json`, and `sf-traffic.json` in the same directory, plus `data/vision/*.json`. They remain ignored by Git; the linked [validation notes](docs/VALIDATION.md) summarize the results. These establish tool use; human caption and vision accuracy review remains pending.
+
+Choose a text model available to your account through `WANDB_MODEL`. See [`.env.example`](.env.example) and the [provider guide](docs/GUIDE.md#1-connect-the-providers) for configuration.
 
 ## Assumptions and limitations
 
