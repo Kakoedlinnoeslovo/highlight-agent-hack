@@ -3,7 +3,7 @@
 Final plan · Real-Time Video Agents Hack · London · 17 October 2026
 Submission closes **4:30 PM BST** (target **4:15 PM**). Target recording deadline: **3:45 PM**. First round: **2 minutes**. Top-five final: **3 minutes at 6 PM**.
 
-Corner Scout leads the demo, matching the [README walkthrough](../README.md#a-2-minute-walkthrough). The caption-based [preset business report](../README.md#4-preset-business-report-caption-based) is the backup, and the city report is the three-minute finale. Frame estimates, rankings, and timings below come from saved runs on 17 October; rerun them after changing the vision cache or scoring code. The human spot-check and the submission recording remain pending.
+Corner Scout leads the demo, matching the [README walkthrough](../README.md#a-2-minute-walkthrough). The caption-based [preset business report](GUIDE.md#4-preset-business-report-caption-based) is the backup, and the city report is the three-minute finale. Frame estimates, rankings, and timings below come from saved runs on 17 October; rerun them after changing the vision cache or scoring code. The human spot-check and the submission recording remain pending.
 
 ## The pitch
 
@@ -89,7 +89,7 @@ Never say: foot-traffic numbers, revenue, "guaranteed best location", or anythin
 ## Prep checklist (in order)
 
 1. **Keep one writer (1 min).** The ChatGPT agent has been told to stop editing docs. Before any further change, agree which agent commits, so the README, this plan, and PR #3 stay consistent.
-2. **Start the app (1 min).** SSH tunnel up (see README), then:
+2. **Start the app (1 min).** SSH tunnel up (see the [provider guide](GUIDE.md#1-connect-the-providers)), then:
    ```sh
    uv run python scripts/corner_scout.py
    ```
@@ -102,7 +102,7 @@ Never say: foot-traffic numbers, revenue, "guaranteed best location", or anythin
    ```
    Check the 3 dog frames (Camera 5), 5 premium-car frames (Camera 1, `c0cc58e7d4da405eaf1e9bb01c83fa55`), and 5 young-adult frames (Camera 2, `32f844ce3dc4472c9d4596ad8afe90a0`). Record "X of 13 confirmed" and put only that reviewed number in the README.
 5. **Record the two-minute run (by 3:45 PM).** 16:9 browser, text readable at 720p. Hide `.env`, tunnel commands, keys, and personal tabs.
-6. **Record the spot-check in the README (2 min).** Replace “Status: pending human review” in [Prove the result](../README.md#prove-the-result) with the reviewed count. Judges read the README.
+6. **Record the spot-check (2 min).** Replace “Status: pending human review” in the guide's [Prove the result](GUIDE.md#prove-the-result) with the reviewed count, and update the human-quality-review row in the [README results](../README.md#results-and-validation). Judges read the README.
 7. **Submit (by 4:15 PM).** Repo, shareable video, tool description, all team names and emails. Open the video link without logging in.
 
 ## Fallbacks
