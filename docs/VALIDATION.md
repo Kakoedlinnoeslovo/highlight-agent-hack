@@ -17,6 +17,12 @@ uv run pytest -q
 
 Generated screenshots, the browser report, and the assembled walkthrough are under `outputs/validation/` on this workspace and are excluded from Git.
 
+## PR verification
+
+The complete local suite passes **122 tests**, with Ruff checks and both source/wheel builds passing. An isolated offline smoke check constructed the UI, rendered different Pro/Roast reels, and exercised revision and undo.
+
+Pre-landing regression checks cover upload source hashes, recovery of registered media, feasible overlapping selections, bounded alternate search, saved timing provenance, delayed audio/video, and video bounds independent of audio tails. Live gameplay validation remains separate from these local checks.
+
 ## Verified live connections
 
 The assigned VAST backend accepted the configured credentials and returned authenticated configuration, an upload bucket, and the configured synthesis model `nvidia/cosmos3-nano-reasoner`. Its `/openapi.json` route returned non-JSON content; this connection check does not establish the deployed ingestion/search schema or prove Cosmos caption execution.
@@ -30,4 +36,3 @@ The initial HTTP 401 came from an inaccessible `WANDB_PROJECT`, despite a valid 
 The connection check does not verify live ingestion/search, executed Cosmos identity, gameplay caption quality, or complete highlight latency. Provider unit tests exercise HTTP contracts and do not count as sponsor execution evidence.
 
 Configure `.env`, run `highlight-agent doctor --remote`, register the exact source, upload or attach its index, and refresh until ready. Review the six actual gameplay examples in `examples/evaluation.json`; do not treat synthetic panels as gameplay-quality evidence. Record the genuine two-/three-minute presentation only after the live flow works.
-
