@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "reports",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8765", "--bind", "127.0.0.1", "--directory", "outputs"],
+      "port": 8765
+    },
+    {
+      "name": "corner-scout",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "python", "scripts/corner_scout.py"],
+      "port": 7861
+    }
+  ]
+}
