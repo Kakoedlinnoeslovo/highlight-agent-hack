@@ -242,6 +242,7 @@ Local `data/` and `outputs/` are ignored. Keep full footage, manifests, renders,
 | Name | Contact |
 | --- | --- |
 | Igor Pejic | [igorpejicw@gmail.com](mailto:igorpejicw@gmail.com) |
+| Lalit KM | [lalit.hilmarsh@gmail.com](mailto:lalit.hilmarsh@gmail.com) |
 | Roman Degtiarev | [ro.degtiarev@gmail.com](mailto:ro.degtiarev@gmail.com) |
 
 ## Help and contributions
