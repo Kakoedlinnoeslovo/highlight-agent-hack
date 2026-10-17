@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#465fff">
+    <meta name="description" content="Compare San Francisco street corners for your small business and watch the recorded footage behind each audience match.">
+    <title>Corner Scout — Find your corner</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='11' fill='%23465fff'/%3E%3Ctext x='20' y='29' font-size='32' text-anchor='middle' fill='white'%3E⌖%3C/text%3E%3C/svg%3E">
+    <link rel="stylesheet" href="/styles.css">
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <a href="#business" class="skip-link">Skip to business description</a>
+    <main id="cs-shell">
+      <header class="cs-masthead">
+        <div class="cs-brand"><span class="cs-logo" aria-hidden="true">⌖</span>Corner Scout</div>
+        <span class="cs-masthead-note">Same streets. Different businesses.</span>
+        <div class="cs-data-badges" id="data-badges" aria-label="Scouting sample"><span>Recorded SF streets</span><span>Cached frame observations</span></div>
+      </header>
+
+      <section class="cs-hero" aria-labelledby="page-title">
+        <h1 id="page-title">Find your corner. See the evidence.</h1>
+        <p>Type any business. Compare who passes each corner, then watch the clips behind the shortlist.</p>
+      </section>
+
+      <form id="cs-query" class="cs-card">
+        <div class="cs-query-label"><label for="business">What are you opening?</label><span>One business. Every corner compared.</span></div>
+        <div id="cs-input-row">
+          <input id="business" name="business" type="text" placeholder="e.g. luxury car detailing" maxlength="400" required autocomplete="off" aria-describedby="business-help">
+          <button id="cs-go" type="submit" disabled>Find my corner</button>
+        </div>
+        <div class="cs-examples-row"><span id="business-help">Try a business</span><button type="button" id="reset" class="cs-text-button">Reset</button></div>
+        <div id="cs-examples" aria-label="Example businesses"></div>
+      </form>
+
+      <div id="announcements" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+      <div id="results" aria-busy="false">
+        <section class="cs-empty">
+          <div class="cs-empty-icon" aria-hidden="true">⌖</div>
+          <h2>Your next corner starts here.</h2>
+          <p>Tell us what you’re opening. We’ll compare who passes each corner<br class="cs-desktop-break"> and show you the footage behind the shortlist.</p>
+          <div class="cs-steps"><span><b>01</b> Describe your business</span><span><b>02</b> Compare the audiences</span><span><b>03</b> Watch the evidence</span></div>
+          <p class="cs-sample-label">Recorded sample · cached audience estimates</p>
+        </section>
+      </div>
+
+      <details class="cs-limitations">
+        <summary>About this scouting sample</summary>
+        <p>One short visit per corner, recorded at different times of day. Audience counts are vision-model estimates from one frame per five seconds, not unique people. Premium-car and people-type calls are judgements from single frames. Check the evidence before deciding; a lease decision needs longer, comparable recordings plus rent and competition.</p>
+        <p>The business profile is generated when you search. Rankings use published, cached frame observations, and the evidence videos are pre-cut from the recorded sample. These are not live street measurements.</p>
+      </details>
+      <noscript><p class="cs-card">Enable JavaScript to compare corners and play the supporting evidence.</p></noscript>
+    </main>
+  </body>
+</html>

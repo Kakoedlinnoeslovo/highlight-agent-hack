@@ -6,7 +6,9 @@
 </p>
 
 <p align="center">
+  <a href="https://corner-scout-rouge.vercel.app"><strong>Try the live demo</strong></a> ·
   <a href="#corner-scout-where-should-i-open-my">Corner Scout</a> ·
+  <a href="#host-on-vercel">Vercel setup</a> ·
   <a href="#try-it-locally">Quick start</a> ·
   <a href="#3-run-corner-scout">Run it</a> ·
   <a href="#4-preset-business-report-caption-based">Preset reports</a> ·
@@ -20,7 +22,7 @@ Built for **Real-Time Video Agents Hack**, London · **17 October 2026**.
 
 Opening a shop is a bet on one corner. Foot-traffic data tells you how many people pass, not who they are. Corner Scout looks at the street footage itself.
 
-Type any business: *dog grooming salon*, *luxury car detailing*, *student bookshop*. Corner Scout works out who its customers are, checks five San Francisco corners for those people, cars, and animals, and ranks the corners. Every recommendation comes with an evidence reel and the exact source chunk behind each clip.
+Type any business: *dog grooming salon*, *luxury car detailing*, *student bookshop*. Corner Scout works out who its customers are, checks five San Francisco corners for those people, cars, and animals, and ranks the corners. Every recommendation comes with playable evidence and the exact source chunk behind each clip. The [hosted demo](https://corner-scout-rouge.vercel.app) plays a playlist of exported clips; the local app renders stitched evidence reels.
 
 **Five corners · 15 minutes of footage · 180 frames read by a vision model · an answer in about 2–6 seconds.**
 
@@ -59,10 +61,10 @@ At Camera 1, **25 of 36 captions mention a bicycle**. Counting caption words wou
 
 ### A 2-minute walkthrough
 
-1. **Click** **Dog grooming salon**. Camera 5 wins; point at “Dogs · core” and “Dogs in 3/36 frames”, then play the evidence reel.
+1. **Click** **Dog grooming salon**. Camera 5 wins; point at “Dogs · core” and “Dogs in 3/36 frames”, then play the evidence clips.
 2. **Type** **Luxury car detailing**. Camera 1 wins on premium cars: same footage, different corner.
 3. **Click** **Kids' toy store**. “Not enough evidence”: it refuses to guess.
-4. **Open** the Weave trace on the result.
+4. **In the local app**, open the Weave trace on the result when available. The hosted demo does not create Weave traces.
 
 > “Tell us what you're opening. We'll show you who walks past each corner, and the clips that prove it.”
 
@@ -71,6 +73,38 @@ The full script, what to say about limits, and prep steps are in the [demo plan]
 **Limits.** This is a scouting sample: **three minutes per corner, recorded on different dates and at different times of day**. Premium-car and people-type calls are the vision model's judgement from single frames, and scores count frames where an audience appears, not unique people. It helps choose where to look next; a lease decision needs longer, comparable recordings plus rent and competition.
 
 **Also in this repo:** a caption-based [preset business report](#4-preset-business-report-caption-based) for four business types, a [city report](#city-report) summarizing every camera, and a [conversational highlight editor](#5-direct-your-own-cut), all on the same footage, renderer, and source references.
+
+## Host on Vercel
+
+The live site runs from [`web/`](web/) on **Node.js 24**, with no npm dependencies. It serves a saved snapshot of **180 vision observations across five corners**, plus individual five-second, 480p H.264 evidence clips. Each business request makes a fresh W&B Inference call through `/api/profile`; the browser scores the cached observations using the local app's deterministic rules, including the minimum of three core-audience frames.
+
+The snapshot and short clips are checked in, so deployment does not require the private dataset or full source recordings. Importing footage, refreshing vision tags, the Gradio editor, and FFmpeg rendering run locally. The hosted runtime uses neither VAST nor FFmpeg and does not create Weave traces.
+
+To refresh the exported observations and clips after [importing footage](#2-import-supplied-sf-streets-footage) and [running the vision pass](#3-run-corner-scout):
+
+```sh
+uv run python scripts/export_vercel.py
+```
+
+To test the hosted app locally with Node.js 24:
+
+```sh
+cd web
+npm test
+npm run dev
+# Opens on http://localhost:3000; loads provider settings from ../.env.
+```
+
+In Vercel, choose **`web` as the project root**, **Other** as the framework, and **`public` as the output directory**. The checked-in `vercel.json` supplies the build and function settings. With the [Vercel CLI](https://vercel.com/docs/cli) installed, deploy from `web/`:
+
+```sh
+vercel link
+vercel env add WANDB_API_KEY production
+vercel env add WANDB_MODEL production
+vercel --prod
+```
+
+Set `WANDB_MODEL` to a text model available to your W&B account. Add `WANDB_PROJECT` as `entity/project` if required by your workspace. `WANDB_INFERENCE_BASE_URL` is optional and defaults to `https://api.inference.wandb.ai/v1`. Keep these values in Vercel environment variables; the API key stays on the server. For preview deployments, add the same settings to the Preview environment.
 
 ## Try it locally
 
@@ -272,13 +306,13 @@ flowchart LR
 
 **Application code also controls timestamps.** The shared selector adds two seconds of setup and three seconds of aftermath, clamps to the source, skips overlapping street scenes, and fits complete events into the budget. A shorter reel is valid when fewer complete matches fit.
 
-The custom-brief editor uses VAST retrieval followed by W&B ranking. The caption-based workflows reuse the supplied Cosmos captions. Credentials, the hosted index, and source footage are not bundled. See the [validation notes](docs/VALIDATION.md) for measured evidence and remaining checks.
+The custom-brief editor uses VAST retrieval followed by W&B ranking. The caption-based workflows reuse the supplied Cosmos captions. Credentials, the hosted index, and full source recordings are not bundled; `web/public/` contains the exported observations and short evidence clips used by the hosted demo. See the [validation notes](docs/VALIDATION.md) for measured evidence and remaining checks.
 
 ## Inputs, outputs, and evidence
 
 **Input:** supplied SF Streets camera streams, up to six contiguous source chunks per recording and their existing VAST captions. Choose a business preset for a comparison report, or a custom brief and a duration of at most 30 seconds for the editor.
 
-**Output:** a **1280×720, 30 fps, H.264/AAC MP4** with `yuv420p` and `+faststart`. Sources without audio receive silence. Each new highlight writes:
+**Local renderer output:** a **1280×720, 30 fps, H.264/AAC MP4** with `yuv420p` and `+faststart`. Sources without audio receive silence. The hosted demo plays exported clips as a playlist rather than rendering a new compilation. Each new local highlight writes:
 
 ```text
 outputs/<edit_id>/
@@ -290,7 +324,7 @@ outputs/<edit_id>/
 
 All edit window timestamps are seconds relative to the assembled local recording. Each `SourceChunk` retains its exact remote `original_video` URI, original `source_duration` and `source_sha256`, plus the prepared excerpt's measured `duration` and cumulative `start_seconds`. Remote segment intervals are validated within the indexed chunk window before being shifted onto the assembled timeline. Revisions write a new reel, plan, and result linked to the previous edit; they reuse the existing selection evidence. Shared Python contracts live in [`highlight_agent/models.py`](highlight_agent/models.py), with `make_highlight(video_id, prompt, max_duration=30)` and `render_edit_plan(plan)` as the main service/rendering interfaces.
 
-Keep `.env`, footage, local manifests, renders, and traces out of Git. `data/` and `outputs/` are ignored. Preserve related artifacts together for offline presentation.
+Keep `.env`, full source recordings, local manifests, renders, and traces out of Git. `data/` and `outputs/` are ignored; the public demo snapshot and short clips in `web/public/` are intentionally checked in. Preserve related local artifacts together for offline presentation.
 
 ## Prove the result
 
