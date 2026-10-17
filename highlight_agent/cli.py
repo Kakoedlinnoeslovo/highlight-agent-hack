@@ -75,7 +75,10 @@ def doctor(service: HighlightService, remote=False) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Direct an edit from grounded visual moments.")
+    parser = argparse.ArgumentParser(
+        description="Highlight Agent engine: sources, indexing, edits, and demo assembly. "
+        "Corner Scout lives in scripts/corner_scout.py and web/."
+    )
     commands = parser.add_subparsers(dest="command", required=True)
     health = commands.add_parser(
         "doctor", help="Inspect local configuration; --remote tests real APIs"

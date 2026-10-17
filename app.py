@@ -1,4 +1,6 @@
-"""The local Highlight Agent director's desk.
+"""The local Highlight Agent director's desk: a secondary conversational highlight editor.
+
+The main demo is Corner Scout (``scripts/corner_scout.py`` and ``web/``).
 
 Run with ``python app.py`` after installing the project dependencies. The UI never
 substitutes example results for a live run. Synthetic fixtures require the explicit

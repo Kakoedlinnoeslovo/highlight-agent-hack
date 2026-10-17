@@ -22,6 +22,9 @@ function options(select, values, first) {
 function clearSelection() {
   selected = null;
   player.clear();
+  for (const button of output.querySelectorAll('[data-result][aria-pressed="true"]')) {
+    button.setAttribute('aria-pressed', 'false');
+  }
   video.hidden = true;
   $('#player-title').textContent = 'Choose a caption interval';
   $('#selected-caption').textContent = '';
@@ -150,5 +153,5 @@ $('#explorer-filters').addEventListener('reset', event => {
   for (const input of Object.values(controls)) input.value = '';
   filterChanged();
 });
-window.addEventListener('pagehide', () => player.destroy());
+window.addEventListener('pagehide', clearSelection);
 load();

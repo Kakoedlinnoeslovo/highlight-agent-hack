@@ -110,7 +110,7 @@ function renderRecommendation(business, profile, weights, ranking, seconds) {
     <div class="cs-result-meta"><div class="cs-match"><span>Relative match</span><b>${Math.round(top.score * 100)}<small>/100</small></b></div>
       <span class="cs-time">${seconds.toFixed(1)}s <span>this search</span></span>
       <details class="cs-reasons"><summary>Why these audiences?</summary><ul>${profile.weights.map(item => `<li><b>${escape(audience(item.key))}:</b> ${escape(item.why)}</li>`).join('')}</ul>
-      <p class="cs-profile-model">${escape(profile.model ? `Profile: ${profile.model}` : 'Generated business profile')}<br>Ranked from cached observations</p>
+      <p class="cs-profile-model">${escape(profile.model ? `Profile: ${profile.model}` : 'Generated business profile')}<br>Ranked from cached observations</p></details>
     </div></section>`;
 }
 

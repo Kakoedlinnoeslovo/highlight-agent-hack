@@ -1,17 +1,24 @@
-"""Record a genuine Corner Scout walkthrough for the demo video.
+"""Record the historical 15-minute SF snapshot walkthrough for the demo videos.
 
-Drives the real web app in headless Chromium, captures every painted frame over
+Requires the original five-camera, 180-frame web snapshot and its retired clip
+assets to be restored first. Assertions and captions describe that historical
+dataset; this script does not replay the current full-collection application.
+The published 82-second demo and 108-second proof video remain historical.
+
+Drives that snapshot in headless Chromium, captures every painted frame over
 the DevTools screencast, and writes ``data/rehearsal.mp4`` plus measured beat
 timestamps in ``data/rehearsal.json``. Searches hit the live ``/api/profile``
 endpoint; nothing is mocked. Captions, the pointer, and title cards are
 in-browser overlays because the minimal FFmpeg build has no ``drawtext``.
 The accompanying ``*-plan.json`` contains the measured, unshortened scenes
-for the product's demo assembler. The walkthrough targets 110 seconds and
-rejects an assembly plan longer than the two-minute submission ceiling.
+for the product's demo assembler. The walkthrough targets 110 seconds (the
+frame-proof cut) and rejects an assembly plan longer than the two-minute submission
+ceiling. ``examples/demo-plan.json`` keeps the measured plan of the published
+82-second demo, recorded with an earlier, shorter version of this walkthrough.
 
     cd web && npm run dev            # in another terminal
-    uv run python scripts/record_demo.py --manifest examples/demo-plan.json
-    uv run highlight-agent demo examples/demo-plan.json --output-dir outputs/demo
+    uv run python scripts/record_demo.py --manifest outputs/demo/proof-reveal/demo-plan.json
+    uv run highlight-agent demo outputs/demo/proof-reveal/demo-plan.json --output-dir outputs/demo
 """
 
 from __future__ import annotations
@@ -157,7 +164,7 @@ HOW_CARD = """
 <div class="steps">
   <div class="step"><b>01 · Footage</b><h3>Real street video</h3><p>SF Streets recordings and NVIDIA Cosmos captions, served by VAST. 5 corners, 15 minutes.</p></div>
   <div class="step"><b>02 · Who passes</b><h3>Vision reads frames</h3><p>Gemma 4 vision on W&amp;B Inference reads one frame every 5 s: people types, car tiers, cyclists, dogs.</p></div>
-  <div class="step"><b>03 · Your business</b><h3>Code ranks corners</h3><p>A W&amp;B text model picks your core customers. Code scores every corner and cuts the evidence.</p></div>
+  <div class="step"><b>03 · Your business</b><h3>Code ranks corners</h3><p>A W&amp;B text model picks your core customers. Code scores every corner and links each count to its source clip.</p></div>
 </div>
 <p class="fine">Models estimate. Code ranks. Vision observations are cached; each business profile is generated when you search.</p>
 <p class="fine">Three minutes per corner, recorded at different times. Sampled frames can show the same person or dog.</p>
@@ -544,7 +551,7 @@ def assembly_manifest(source: Path, destination: Path, beats: list[dict], durati
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--url", default="http://localhost:3000", help="Corner Scout web app to record.")
+    parser.add_argument("--url", default="http://localhost:3000", help="URL serving the restored historical 180-frame Corner Scout snapshot.")
     parser.add_argument("--output", type=Path, default=ROOT / "data" / "rehearsal.mp4")
     parser.add_argument(
         "--manifest", type=Path,
