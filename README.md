@@ -25,6 +25,8 @@ with ranked results and playable source clips.
   <sub>Real searches in the web app, recorded in one take before the UI redesign: dog grooming salon, luxury car detailing, a kids' toy store it refuses to recommend, and why frames beat caption words. The presenter is AI-generated (Nano Banana Pro portrait, voiced and lip-synced with Veo 3.1) and the music was synthesized for this video. <a href="docs/GUIDE.md#the-demo-uses-the-same-renderer">How it was made</a>.</sub>
 </p>
 
+**Inspect the frame proof:** click an audience count to see every matching still, inspect all sampled frames, and play the surrounding moment. [Watch the 108-second frame-proof walkthrough](docs/assets/corner-scout-proof-reveal.mp4) or read the [proof controls and recording guide](docs/PROOF_REVEAL.md).
+
 > **In 30 seconds:** Opening a shop is a bet on a corner. Corner Scout samples street footage, estimates which audiences appear, and matches them to a business description. A vision model reads the frames; a text model identifies core and helpful audiences; application code ranks the corners. Every recommendation links to video evidence. When the best corner has fewer than three frames showing a core audience, it says **“Not enough evidence.”**
 
 | **5 corners** | **15 minutes** | **180 observations** | **3-frame minimum** |
@@ -56,7 +58,7 @@ Type *dog grooming salon*, *luxury car detailing*, or *student bookshop*. Corner
 
 | Experience | What you get | Start here |
 | --- | --- | --- |
-| **Hosted Corner Scout** | A fresh audience profile, rankings over saved observations, and a playlist of evidence clips | [Live demo](https://corner-scout-rouge.vercel.app) or [web quick start](#quick-start) |
+| **Hosted Corner Scout** | A fresh audience profile, rankings over saved observations, and sampled-frame proof with playable context | [Live demo](https://corner-scout-rouge.vercel.app) or [web quick start](#quick-start) |
 | **Local Corner Scout** | Rankings over imported cameras, stitched evidence reels, and Weave traces when available | [Local setup](docs/GUIDE.md#try-it-locally) |
 | **Preset and city reports** | Shareable HTML reports from the supplied captions, with counts and video evidence | [Report commands](docs/GUIDE.md#4-preset-business-report-caption-based) |
 | **Highlight editor** | Custom briefs, source previews, editable cuts, revision, undo, and MP4 downloads | [Editor commands](docs/GUIDE.md#5-direct-your-own-cut) |
@@ -68,13 +70,13 @@ Type *dog grooming salon*, *luxury car detailing*, or *student bookshop*. Corner
 1. **Describe the business.** The text model proposes its target audiences. Explicit supported audience terms in the description, such as “dog” or “student”, are enforced as core by application rules.
 2. **Compare the observations.** Camera 5 has dogs in three frames; Camera 4 has one; the other three cameras have none in this sample.
 3. **Inspect the ranking.** In the saved run, Camera 5 scores **80/100**. The UI shows the core and helpful audiences and each corner's observed mix.
-4. **Play the evidence.** Check the source clips behind the recommendation. Local renders also save an `edit_plan.json` with exact source windows.
+4. **Inspect the evidence.** Click the count to see all matching sampled frames and the full sampling grid. For dogs, inspect 0:02.5, 0:07.5, and 0:12.5; switch the reviewed detail crop to the full frame, then play the surrounding clip. The same dog can appear in several samples. Local renders also save an `edit_plan.json` with exact source windows.
 
 The score is a relative audience match within this sample. It is not an 80% probability that the business will succeed.
 
 ### A 2-minute walkthrough
 
-1. Choose **Dog grooming salon**. Inspect “Dogs · core”, the 3/36 count, and its evidence clips.
+1. Choose **Dog grooming salon**. Click the 3-of-36 count, inspect the three matching stills, and play the surrounding footage.
 2. Enter **Luxury car detailing**. Camera 1 leads on premium cars: the same footage answers a different question.
 3. Choose **Kids' toy store**. Sparse family observations produce **“Not enough evidence.”**
 4. In the local app, open a **Weave trace** when available to inspect the call. The hosted demo does not create traces.

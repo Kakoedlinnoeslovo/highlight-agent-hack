@@ -9,6 +9,7 @@
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='11' fill='%23465fff'/%3E%3Ctext x='20' y='29' font-size='32' text-anchor='middle' fill='white'%3E⌖%3C/text%3E%3C/svg%3E">
     <link rel="stylesheet" href="/styles.css">
     <link rel="stylesheet" href="/scout_motion.css">
+    <link rel="stylesheet" href="/proof.css">
     <script type="module" src="/app.js"></script>
   </head>
   <body>
@@ -30,6 +31,7 @@
         <div id="cs-input-row">
           <input id="business" name="business" type="text" placeholder="e.g. luxury car detailing" maxlength="400" required autocomplete="off" aria-describedby="business-help">
           <button id="cs-go" type="submit" disabled>Find my corner</button>
+          <button id="edit-business" class="cs-text-button" type="button" aria-expanded="false" aria-controls="cs-examples">More businesses</button>
         </div>
         <div class="cs-examples-row"><span id="business-help">Try a business</span><button type="button" id="reset" class="cs-text-button">Reset</button></div>
         <div id="cs-examples" aria-label="Example businesses"></div>
