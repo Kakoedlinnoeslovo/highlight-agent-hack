@@ -20,7 +20,7 @@ with ranked results and playable source clips.
 <p align="center">
   <a href="docs/assets/corner-scout-demo.mp4"><img src="docs/assets/corner-scout-demo.gif" width="800" alt="Corner Scout demo: a presenter introduces the app, a one-click dog grooming salon search picks dogs as the core customers and ranks Camera 5 first with dogs in 3 of 36 frames, then the evidence and ranking appear"></a>
   <br>
-  <a href="docs/assets/corner-scout-demo.mp4"><strong>▶ Watch the 82-second demo with sound</strong></a>
+  <a href="https://drive.google.com/file/d/1zZgiQSG6cm3ZWqlijK4rIugzymr1lPrq/view?usp=sharing"><strong>▶ Watch the 82-second demo with sound</strong></a> · <a href="docs/assets/corner-scout-demo.mp4">MP4 in this repo</a>
   <br>
   <sub>Real searches in the web app, recorded in one take before the UI redesign: dog grooming salon, luxury car detailing, a kids' toy store it refuses to recommend, and why frames beat caption words. The presenter is AI-generated (Nano Banana Pro portrait, voiced and lip-synced with Veo 3.1) and the music was synthesized for this video. <a href="docs/GUIDE.md#the-demo-uses-the-same-renderer">How it was made</a>.</sub>
 </p>
