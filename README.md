@@ -30,7 +30,7 @@ These describe the checked-in demo snapshot, exported on 17 October 2026. Counts
 
 <p align="center">
   <a href="https://corner-scout-rouge.vercel.app">
-    <img src="docs/assets/corner-scout-dog-grooming.png" width="720" alt="Local Corner Scout result: Camera 5 ranks first for a dog grooming salon, with dogs in 3 of 36 sampled frames, audience counts for every corner, and source evidence below.">
+    <img src="docs/assets/corner-scout-dog-grooming.png" width="720" alt="Local Corner Scout result: Camera 5 ranks first for a dog grooming salon with a relative match of 80/100 and dogs in 3 of 36 sampled frames, beside an evidence video from Camera 5 and all five corners ranked by core-audience frames.">
   </a>
   <br>
   <sub>A saved run of the local app. The hosted demo plays exported clips; the local app also renders stitched evidence reels.</sub>
