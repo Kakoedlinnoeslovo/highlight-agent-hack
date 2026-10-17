@@ -298,14 +298,17 @@ The offline sample uses generated color panels and manually labeled captions. It
 
 ## The demo uses the same renderer
 
-Record a genuine 16:9 rehearsal, then assemble the presentation with the renderer that makes the highlights:
+The [README demo video](../README.md) was recorded from the real web app and assembled with the renderer that makes the highlights:
 
 ```sh
+cd web && npm run dev                     # in another terminal: the hosted app, locally
+uv run python scripts/record_demo.py      # real searches → data/rehearsal.mp4 + measured beats
 uv run highlight-agent demo examples/demo-plan.json --output-dir outputs/demo
-uv run highlight-agent demo examples/demo-plan-extended.json --output-dir outputs/demo-final
 ```
 
-First replace the illustrative scene windows with measured timestamps from `data/rehearsal.mp4`. Paths resolve relative to the manifest. An optional `narration_path` points to human narration recorded against the assembled cut. These example manifests are templates, rather than prerecorded successful runs; presentation scene selection is manual.
+`record_demo.py` drives the app in headless Chromium and captures every painted frame. Each search calls the live `/api/profile` endpoint, so on-screen timings are real. Captions, the pointer, and title cards are in-browser overlays, because the minimal FFmpeg build has no `drawtext`. The script writes each beat's measured start and end to `data/rehearsal.json`. [`examples/demo-plan.json`](../examples/demo-plan.json) holds the measured windows from the published take, recorded before the UI redesign. Pass `--chromium PATH` if Playwright's bundled browser is missing.
+
+For the published cut, an AI presenter (a Nano Banana Pro portrait, voiced and lip-synced with Veo 3.1) was composited into four 8-second slots on the rehearsal. Her lines plus a synthesized music bed, ducked under the voice, went in as `narration_path`, so `highlight-agent demo` mixed and assembled the final MP4. Paths resolve relative to the manifest. [`examples/demo-plan-extended.json`](../examples/demo-plan-extended.json) is still a template for the three-minute final.
 
 Lead with the [Corner Scout walkthrough](../README.md#a-2-minute-walkthrough); the [demo plan](DEMO_PLAN.md) has the full script. The [editor demo guide](DEMO_SCRIPT.md) covers optional revision and undo, and the [recording/toolchain guide](../demo-video-toolchain-setup.md) covers capture and assembly. Use fresh requests when measured latency fits the slot; label saved runs and disclose shortened waits. Claim that the demo was assembled with the tool only after rendering the real rehearsal this way.
 

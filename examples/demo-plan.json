@@ -3,44 +3,49 @@
   "max_duration_seconds": 120,
   "scenes": [
     {
-      "start_seconds": 0,
-      "end_seconds": 8,
-      "label": "Generated teaser"
+      "start_seconds": 0.2,
+      "end_seconds": 4.81,
+      "label": "Title: where should I open my shop?"
     },
     {
-      "start_seconds": 20,
-      "end_seconds": 30,
-      "label": "Original source and indexing disclosure"
+      "start_seconds": 4.81,
+      "end_seconds": 9.41,
+      "label": "Home page and scouting sample"
     },
     {
-      "start_seconds": 40,
-      "end_seconds": 62,
-      "label": "Make me look like a pro"
+      "start_seconds": 9.41,
+      "end_seconds": 21.29,
+      "label": "Dog grooming salon ranked"
     },
     {
-      "start_seconds": 65,
-      "end_seconds": 80,
-      "label": "Clean landings playback"
+      "start_seconds": 21.29,
+      "end_seconds": 37.24,
+      "label": "Evidence clips play"
     },
     {
-      "start_seconds": 95,
-      "end_seconds": 120,
-      "label": "Now roast my driving and changed selections"
+      "start_seconds": 37.24,
+      "end_seconds": 50.73,
+      "label": "Luxury car detailing typed"
     },
     {
-      "start_seconds": 130,
-      "end_seconds": 145,
-      "label": "Source evidence and optional revision"
+      "start_seconds": 50.73,
+      "end_seconds": 59.54,
+      "label": "Kids' toy store refuses"
     },
     {
-      "start_seconds": 150,
-      "end_seconds": 167,
-      "label": "Actual trace and measured timings"
+      "start_seconds": 59.54,
+      "end_seconds": 69.86,
+      "label": "Frames beat captions"
     },
     {
-      "start_seconds": 170,
-      "end_seconds": 178,
-      "label": "Download and closing"
+      "start_seconds": 69.86,
+      "end_seconds": 76.87,
+      "label": "How it works"
+    },
+    {
+      "start_seconds": 76.87,
+      "end_seconds": 82.4,
+      "label": "Try it"
     }
   ]
 }
