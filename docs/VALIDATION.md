@@ -1,5 +1,22 @@
 # Implementation validation — 17 October 2026
 
+## Current SF Streets workflow
+
+The application now uses the supplied public SF Streets dataset. The live picker excludes earlier gameplay recordings, and the former YouTube downloader exits without downloading or uploading anything.
+
+- Live discovery returned 122 indexed chunks across five SF street cameras. Camera 5's first six chunks were imported without uploading or reindexing.
+- Exact original objects were downloaded and fingerprinted. Their indexed 30-second windows were prepared with the shared renderer, excluding uncaptioned encoder tails. The registered timeline is 180 seconds; the assembled MP4 probes at 180.021 seconds, within one frame of that timeline.
+- All 36 indexed caption segments passed source-boundary, ordering, and coverage checks. Returned rows report `nvidia/cosmos3-nano-reasoner`.
+- “Show me pedestrians and cyclists.” produced three windows at 23–33, 33–43, and 43–53 seconds: a playable 30-second MP4 in 23.427 seconds, including 2.045 seconds rendering.
+- “Show me buses and street traffic.” produced different windows at 0–8, 18–28, and 8–18 seconds: a playable 28-second MP4 in 18.634 seconds, including 1.931 seconds rendering. This run completed through the browser UI.
+- The browser revision removed clip two, moved the highest-ranked remaining moment first, and rendered an 18-second result with windows 8–18 and 0–8 seconds.
+- Browser undo restored the original 28-second traffic reel. Selecting its first evidence row loaded a playable eight-second source preview; both video players reported ready state 4 with no media errors. The 390-pixel mobile viewport had no page overflow.
+- The current suite passes **192 tests** and Ruff. New checks cover dataset browsing/downloads, chunk provenance and timestamp mapping, actual normalized assembly/rendering, omitted tails, partial failures, separate street selections, and stale sessions accessing legacy sources.
+
+Local artifacts are `outputs/validation/sf-import.json`, `sf-live-report.json`, `sf-people.json`, and `sf-traffic.json`, with per-edit MP4s, plans, evidence, and actual Weave trace links in `outputs/<edit_id>/`. These artifacts and all footage remain ignored by Git.
+
+The six-case human caption-quality evaluation remains unreviewed. `examples/evaluation-sf-streets.json` is an illustrative template, not a passing quality result. The earlier connection and synthetic checks below are historical evidence.
+
 ## Verified locally
 
 - Automated tests exercise real FFmpeg exports and mocked provider HTTP contracts, selection, source integrity, persistence, revisions/undo, model-output repair, human evaluation, and CLI failures.
@@ -17,7 +34,7 @@ uv run pytest -q
 
 Generated screenshots, the browser report, and the assembled walkthrough are under `outputs/validation/` on this workspace and are excluded from Git.
 
-## PR verification
+## Earlier PR verification
 
 The complete local suite passes **122 tests**, with Ruff checks and both source/wheel builds passing. An isolated offline smoke check constructed the UI, rendered different Pro/Roast reels, and exercised revision and undo.
 
@@ -31,8 +48,10 @@ A real W&B inference request returned the validated JSON result `{"ok": true}`. 
 
 The initial HTTP 401 came from an inaccessible `WANDB_PROJECT`, despite a valid API key. Switching to the authenticated account's default workspace fixed both inference and Weave. API keys remain in the ignored local `.env`.
 
-## Still requires gameplay validation
+A subsequent live source-index check found nine of ten gameplay recordings ready with all 24 declared segments and continuous coverage of their 120-second local sources. Fortnite and both GTA V recordings passed; Modern Warfare 4 had 23 of 24 segments at that check. Returned caption rows report `nvidia/cosmos3-nano-reasoner`. The local snapshot is `outputs/validation/index-status.json`. The remaining rows arrived during investigation; no worker restart or deployment change was made.
 
-The connection check does not verify live ingestion/search, executed Cosmos identity, gameplay caption quality, or complete highlight latency. Provider unit tests exercise HTTP contracts and do not count as sponsor execution evidence.
+## Historical gameplay validation boundary
+
+The index check does not verify live search/ranking, gameplay caption quality, or complete highlight latency. Reported caption model IDs are recorded evidence; provider unit tests exercise HTTP contracts and do not count as sponsor execution evidence.
 
 Configure `.env`, run `highlight-agent doctor --remote`, register the exact source, upload or attach its index, and refresh until ready. Replace the placeholder video ID and intervals in `examples/evaluation.json` with six actual gameplay examples, then review them against the indexed captions; do not treat synthetic panels as gameplay-quality evidence. Record the genuine two-/three-minute presentation only after the live flow works.
