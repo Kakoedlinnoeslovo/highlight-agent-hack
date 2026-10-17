@@ -18,12 +18,24 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import corner_scout as scout
+from vision_tags import _frame as sample_frame
 
 from highlight_agent.models import VideoRecord
 from highlight_agent.service import HighlightService
 
 ROOT = Path(__file__).resolve().parents[1]
 ENCODING = "h264-480p-crf28-24fps-v1"
+IMAGE_ENCODING = "mjpeg-1024w-v1"
+# Inspected presentation crop, bound to the exact source and sampled frame.
+# These coordinates are not model detections; the uncropped image is always published.
+REVIEWED_FOCUS = {
+    (
+        "5c9f00875b47c3029b8ae7aa6386564765025839eb1a03d4e3ad1f55d916afcf",
+        "moment-56b35c1ebeee67742d7e",
+        7.5,
+    ): {"dog": {"x": 0.125, "y": 0.5, "width": 0.5, "height": 0.5}},
+}
+
 
 
 def export_clip(source: Path, start: float, end: float, destination: Path) -> None:
@@ -41,6 +53,25 @@ def export_clip(source: Path, start: float, end: float, destination: Path) -> No
             ],
             check=True, capture_output=True, timeout=90,
         )
+        temporary.replace(destination)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def export_image(source: Path, seconds: float, destination: Path) -> None:
+    """Reconstruct the sampled image from the original using the vision extractor."""
+    if destination.is_file() and destination.stat().st_size:
+        return
+    temporary = destination.with_suffix(".tmp.jpg")
+    try:
+        uri = sample_frame(source, seconds)
+        prefix = "data:image/jpeg;base64,"
+        if not uri.startswith(prefix):
+            raise ValueError("Sample extraction did not produce a JPEG image.")
+        image = base64.b64decode(uri[len(prefix):], validate=True)
+        if not image:
+            raise ValueError("Sample extraction produced an empty image.")
+        temporary.write_bytes(image)
         temporary.replace(destination)
     finally:
         temporary.unlink(missing_ok=True)
@@ -81,7 +112,7 @@ def export_site(destination: Path, workers: int = 4) -> dict:
     public = destination / "public"
     media = public / "media"
     media.mkdir(parents=True, exist_ok=True)
-    exported, jobs = [], []
+    exported, jobs, image_jobs = [], [], []
     for corner in corners:
         video = corner["video"]
         # Verify the same source bytes used for cached observations before publishing evidence.
@@ -110,18 +141,34 @@ def export_site(destination: Path, workers: int = 4) -> dict:
             ).hexdigest()[:20]
             filename = f"{video.id[:8]}-{digest}.mp4"
             jobs.append((video.local_path, start, end, media / filename))
-            frames.append({
+            sampled_at = frame["seconds"]
+            if not start <= sampled_at < end:
+                raise ValueError(f"Sampled frame is outside the evidence interval for {video.id}.")
+            image_digest = hashlib.sha256(
+                f"{video.content_sha256}:{sampled_at:.3f}:{IMAGE_ENCODING}".encode()
+            ).hexdigest()[:20]
+            image_filename = f"{video.id[:8]}-{image_digest}.jpg"
+            image_jobs.append((video.local_path, sampled_at, media / image_filename))
+            published_frame = {
                 "segment_id": frame["segment_id"], "counts": frame["counts"],
                 "notable": frame.get("notable", ""), "start": start, "end": end,
                 "source": scout.city._source_ref(video, start, end),
-                "clip": f"/media/{filename}",
-            })
+                "clip": f"/media/{filename}", "sampledAt": sampled_at,
+                "image": f"/media/{image_filename}",
+            }
+            focus = REVIEWED_FOCUS.get((
+                video.content_sha256, frame["segment_id"], sampled_at,
+            ))
+            if focus:
+                published_frame["focus"] = focus
+            frames.append(published_frame)
         exported.append({
             "id": video.id, "camera": corner["camera"], "headline": corner["headline"],
             "recorded": corner["recorded"], "duration": video.duration, "frames": frames,
         })
     with ThreadPoolExecutor(max_workers=workers) as pool:
         list(pool.map(lambda job: export_clip(*job), jobs))
+        list(pool.map(lambda job: export_image(*job), image_jobs))
     previews = scout.corner_previews(service, corners)
     for index, item in enumerate(exported):
         uri = previews[index].get("poster", "") if index < len(previews) else ""
@@ -140,13 +187,14 @@ def export_site(destination: Path, workers: int = 4) -> dict:
         "schema": scout.BusinessProfile.model_json_schema(),
     }, indent=2) + "\n")
     (public / "scout_motion.css").write_bytes((ROOT / "scripts" / "scout_motion.css").read_bytes())
-    # Publish only after every clip exists, and remove old clips produced by this exporter.
+    # Publish only after every clip and sampled image exists. A failed extraction leaves
+    # the previous snapshot and all of its referenced media in place.
     temporary = public / "corners.tmp.json"
     temporary.write_text(json.dumps(payload, indent=2) + "\n")
     temporary.replace(public / "corners.json")
-    referenced = {job[3].name for job in jobs}
+    referenced = {job[3].name for job in jobs} | {job[2].name for job in image_jobs}
     for path in media.iterdir():
-        if re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{20}\.mp4", path.name):
+        if re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{20}\.(mp4|jpg)", path.name):
             if path.name not in referenced:
                 path.unlink()
     return payload
@@ -159,7 +207,7 @@ def main() -> None:
     args = parser.parse_args()
     result = export_site(args.output_dir.resolve(), args.workers)
     frames = sum(len(corner["frames"]) for corner in result["corners"])
-    print(f"Exported {len(result['corners'])} corners and {frames} evidence clips.")
+    print(f"Exported {len(result['corners'])} corners, {frames} clips and {frames} sampled images.")
 
 
 if __name__ == "__main__":
