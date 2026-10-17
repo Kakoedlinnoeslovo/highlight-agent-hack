@@ -18,7 +18,7 @@
 
 Built for **Real-Time Video Agents Hack**, London · **17 October 2026**.
 
-[![Live demo on Vercel:corner-scout-rouge.vercel.app](https://img.shields.io/badge/Live%20demo-corner--scout--rouge.vercel.app-000000?style=for-the-badge&logo=vercel&logoColor=white)](https://corner-scout-rouge.vercel.app)
+[![Live demo on Vercel: corner-scout-rouge.vercel.app](https://img.shields.io/badge/Live%20demo-corner--scout--rouge.vercel.app-000000?style=for-the-badge&logo=vercel&logoColor=white)](https://corner-scout-rouge.vercel.app)
 
 ![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)
 ![Node.js 24](https://img.shields.io/badge/Node.js-24-5FA04E?logo=nodedotjs&logoColor=white)
@@ -349,6 +349,8 @@ flowchart LR
 ```
 
 **Models estimate and describe; application code scores and selects.** Each corner's score uses the proportion of sampled frames containing an audience, normalized against the strongest corner for that audience. Core audiences contribute 75% when helpful audiences exist, or the full score otherwise. Ordinary adults and mid-range cars are excluded as general signals. Recommendations must also pass the [three-frame evidence gate](#features).
+
+Python ranking lives in [scripts/corner_scout.py](scripts/corner_scout.py); browser scoring lives in [web/public/scout.js](web/public/scout.js).
 
 Custom briefs use VAST retrieval followed by W&B ranking. The shared selector controls timestamps: it adds two seconds of setup and three seconds of aftermath, clamps windows to the source, skips overlapping street scenes, and fits complete events into the duration budget. A shorter reel is valid when fewer complete matches fit. Caption reports count explicit patterns and ask the model to choose known segment IDs as evidence.
 
