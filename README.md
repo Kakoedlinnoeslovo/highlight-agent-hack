@@ -2,68 +2,75 @@
 
 <p align="center">
   <strong>Find your corner. See the evidence.</strong><br>
-  Compare street corners for your next shop, then watch the clips behind the shortlist.
+  Type any business. Corner Scout watches street footage, sees who actually passes each corner, and ranks them with video evidence.
 </p>
 
 <p align="center">
-  <a href="#the-jury-example-where-should-i-open-my-bike-shop">Jury example</a> ·
+  <a href="#corner-scout-where-should-i-open-my">Corner Scout</a> ·
   <a href="#try-it-locally">Quick start</a> ·
-  <a href="#3-build-the-business-report">Business report</a> ·
+  <a href="#3-run-corner-scout">Run it</a> ·
+  <a href="#4-preset-business-report-caption-based">Preset reports</a> ·
   <a href="#under-the-hood">Architecture</a> ·
   <a href="#prove-the-result">Evaluation</a>
 </p>
 
 Built for **Real-Time Video Agents Hack**, London · **17 October 2026**.
 
-## The jury example: “Where should I open my bike shop?”
+## Corner Scout: “Where should I open my…?”
 
-You are opening a bike repair shop. You have footage from five San Francisco corners. Which one should you investigate first?
+Opening a shop is a bet on one corner. Foot-traffic data tells you how many people pass, not who they are. Corner Scout looks at the street footage itself.
 
-Choose **Bike shop**. Highlight Agent compares captions describing people riding bicycles across all five recordings, ranks the corners, and makes short evidence reels for the leading locations. Open a clip to see its caption, exact source chunk, and offset.
+Type any business: *dog grooming salon*, *luxury car detailing*, *student bookshop*. Corner Scout works out who its customers are, checks five San Francisco corners for those people, cars, and animals, and ranks the corners. Every recommendation comes with an evidence reel and the exact source chunk behind each clip.
 
-**Five corners · 15 minutes of footage · 20-second evidence reels.** The saved run recorded **28.1 seconds** for all four business comparisons and their evidence reels, using footage already imported and indexed. Import and caption generation are outside that timing.
+**Five corners · 15 minutes of footage · 180 frames read by a vision model · an answer in about 2–6 seconds.**
 
-![Bike-shop report comparing five corners, with Camera 3 ranked first and a playable evidence reel below](docs/assets/business-report-bike-shop.png)
+![Corner Scout ranking five San Francisco corners for a dog grooming salon: Camera 5 first with dogs in 3 of 36 frames, every corner's audience mix, and an evidence filmstrip showing a dog walker](docs/assets/corner-scout-dog-grooming.png)
 
-### The parked-bike trap
+### Who passes each corner
 
-A search for any mention of a bicycle would put **Camera 1 first**. One of its captions describes a bicycle parked beside a bin. For this demo, we narrow the signal to captions describing **cyclists or riding**:
+Captions could not answer “who”: across 180 captions, none names a car brand or says “luxury”, one mentions a suit, and none mentions an older person. So a **Gemma 4 vision model on W&B Inference** looked at one frame per five-second segment and estimated what it saw: office workers, students and young adults, families with children, older adults, workers in uniform, premium, mid-range and budget cars, taxis, buses, delivery vehicles, motorcycles and scooters, cyclists, and dogs. The pass took 2.7 minutes and is cached.
 
-| Corner | Segments mentioning any bicycle | Segments matching the riding signal |
-| --- | ---: | ---: |
-| **Camera 3** | 13 / 36 | **11 / 36** |
-| **Camera 5** | 11 / 36 | **9 / 36** |
-| **Camera 1** | **25 / 36** | 1 / 36 |
+| Corner | Landmark | Recorded | Seen most often (frames of 36) |
+| --- | --- | --- | --- |
+| Camera 1 | Downtown towers | 1 Oct, 09:41 | Premium cars 28 · delivery vehicles 24 · motorcycles & scooters 16 |
+| Camera 2 | Fidelity building | 1 Oct, 09:51 | Buses 17 · delivery vehicles 15 · office workers 12 · young adults 10 |
+| Camera 3 | Bank of America at Stockton | 1 Oct, 10:04 | Taxis 9 · cyclists 8 · motorcycles & scooters 8 |
+| Camera 4 | Transamerica Pyramid in view | 1 Oct, 10:07 | Buses 16 · premium cars 10 · motorcycles & scooters 10 |
+| Camera 5 | Condor sign | 6 Oct, 12:35 | Premium cars 20 · cyclists 13 · motorcycles & scooters 7 · dogs 3 |
 
-Camera 3 leads on the riding signal. Its **20-second reel contains two source clips** you can inspect before deciding what to investigate next.
-
-Each number counts **five-second caption segments**, so the same cyclist may appear in more than one segment. These are caption matches, not unique cyclist or customer counts.
+No tourists and no older adults were detected at any corner.
 
 ### Same streets. Different businesses.
 
-Change the business and the useful signal changes with it. These are results from the same saved report:
-
-| You want to open… | The report looks for… | Result in this sample |
+| You type… | Core customers | Result in this sample |
 | --- | --- | --- |
-| 🚲 **Bike shop** | People riding bicycles | Camera 3 leads: **11 / 36** matching segments. |
-| ☕ **Café** | Groups of pedestrians | Camera 1 leads: **17 / 36**. |
-| 🚌 **Transit kiosk** | Buses | Cameras 2 and 4 tie: **15 / 36** each. |
-| 🐕 **Dog shop** | Dogs in the captions | **Not enough evidence to recommend a corner.** The best has only **2 / 36**. |
+| 🐕 **Dog grooming salon** | Dogs | **Camera 5**, match 80/100. Dogs in 3 of 36 frames; three other corners have none. |
+| 🚗 **Luxury car detailing** | Premium cars | **Camera 1**, 85/100. Premium cars in 28 of 36 frames. |
+| 📚 **Student bookshop** | Students & young adults | **Camera 2**, 92/100. Young adults in 10 of 36 frames. |
+| 🚲 **Bike repair shop** | Cyclists | **Camera 5**, 83/100. Cyclists in 13 of 36 frames. |
+| 🧸 **Kids' toy store** | Families with children | **Not enough evidence.** One stroller in 180 frames. |
+| 🎁 **Souvenir shop** | Tourists | **Not enough evidence.** No tourists seen. |
 
-The report recommends a corner only when at least three segments there match the chosen signal. The dog-shop result demonstrates how it handles a thin sample.
+Each result above came out the same in two runs. When a description names an audience (dog, luxury, student, kids, bike…), that audience is always core. Otherwise the text model chooses, and its choice can vary between runs; the chips on every result show what it chose. Corner Scout recommends a corner only when the best one shows its core audience in at least three sampled frames.
 
-### A 60-second jury walkthrough
+### Why frames, not just captions
 
-1. **Ask:** “I'm opening a bike shop. Which of these five corners should I scout first?” Select **Bike shop**.
-2. **Show:** Camera 3 leads. Play its 20-second evidence reel and point to the source references.
-3. **Explain:** “A bicycle keyword search puts Camera 1 first. Look at this example: a parked bike. Looking for riders changes the shortlist.”
-4. **Switch:** Select **Café**, then **Dog shop**. Show the changed ranking and the explicit “not enough evidence” result.
+At Camera 1, **25 of 36 captions mention a bicycle**. Counting caption words would call it a cycling hotspot. The frames show a parked kick scooter and no riders: the vision pass counts **0 cyclists** there. Evidence clips let anyone check.
 
-> “Tell us what you're opening. We'll show you which corner to scout first, and the clips that explain why.”
+### A 2-minute walkthrough
 
-This is a scouting sample: **three minutes per corner, recorded on different dates and at different times**. It helps choose where to look next. A location decision needs longer, comparable recordings and information such as rent and competition.
+1. **Click** **Dog grooming salon**. Camera 5 wins; point at “Dogs · core” and “Dogs in 3/36 frames”, then play the evidence reel.
+2. **Type** **Luxury car detailing**. Camera 1 wins on premium cars: same footage, different corner.
+3. **Click** **Kids' toy store**. “Not enough evidence”: it refuses to guess.
+4. **Open** the Weave trace on the result.
 
-**Current scope:** supplied SF Streets footage, four preset business comparisons, browser reports, and **16:9, 720p** evidence reels. The same pipeline also supports a [conversational highlight editor](#4-direct-your-own-cut). The separate [Corner Scout prototype](#free-text-corner-scout-prototype) explores free-text business requests using frame estimates.
+> “Tell us what you're opening. We'll show you who walks past each corner, and the clips that prove it.”
+
+The full script, what to say about limits, and prep steps are in the [demo plan](docs/DEMO_PLAN.md).
+
+**Limits.** This is a scouting sample: **three minutes per corner, recorded on different dates and at different times of day**. Premium-car and people-type calls are the vision model's judgement from single frames, and scores count frames where an audience appears, not unique people. It helps choose where to look next; a lease decision needs longer, comparable recordings plus rent and competition.
+
+**Also in this repo:** a caption-based [preset business report](#4-preset-business-report-caption-based) for four business types, a [city report](#city-report) summarizing every camera, and a [conversational highlight editor](#5-direct-your-own-cut), all on the same footage, renderer, and source references.
 
 ## Try it locally
 
@@ -77,9 +84,9 @@ uv run highlight-agent doctor
 uv run python app.py
 ```
 
-Configure the providers below. The Gradio editor normally opens at **http://127.0.0.1:7860**; use **Browse SF Streets** and **Use dataset video** to import recordings. To reproduce the jury example, import the camera streams you want to compare and [generate the business report](#3-build-the-business-report).
+Configure the providers below. The Gradio editor normally opens at **http://127.0.0.1:7860**; use **Browse SF Streets** and **Use dataset video** to import recordings. To reproduce Corner Scout, import the camera streams you want to compare, then [tag their frames and start the app](#3-run-corner-scout).
 
-## From dataset to business report
+## From dataset to corner ranking
 
 ### 1. Connect the providers
 
@@ -137,22 +144,60 @@ Each remote caption interval is relative to its own chunk. The importer measures
 
 Reimporting a registered source keeps its video ID. If local media is missing or changed, the importer rebuilds the registered excerpt and checks its saved source hashes, timing, and caption coverage before replacing the media.
 
-### 3. Build the business report
+### 3. Run Corner Scout
 
-Import each camera you want to compare with `import-dataset`; the saved demo uses five. The report includes every imported SF Streets recording marked ready.
+Import each camera you want to compare with `import-dataset`; the saved demo uses five. Corner Scout includes every imported SF Streets recording that has vision tags.
 
 ```sh
-# Optional: generate camera summaries and landmark headlines first.
+# Once per imported footage: one frame per indexed segment to the vision model.
+uv run python scripts/vision_tags.py
+
+# Optional: landmark headlines for each corner (also builds the city report).
 uv run python scripts/city_report.py
 
-# Build all four business comparisons and their evidence reels.
+# The app: type any business, or click an example.
+uv run python scripts/corner_scout.py
+# Opens on http://127.0.0.1:7861 by default.
+
+# Or rank one business from the command line (prints JSON, renders reels):
+uv run python scripts/corner_scout.py --business 'dog grooming salon'
+```
+
+`vision_tags.py` sends each segment's middle frame to `google/gemma-4-31B-it` on W&B Inference and caches estimated counts per category in `data/vision/<video_id>.json` (180 frames took 2.7 minutes). It reuses valid cached observations and retries failed or invalid ones; failed observations stay gaps rather than zero counts.
+
+For each business, the configured W&B text model (`meta-llama/Llama-3.3-70B-Instruct` in the saved runs) returns one or two **core** audiences and up to three **helpful** ones from the fixed category list. Application code then scores each corner from the cached counts, cuts evidence reels for the top two corners with the shared renderer, and writes them to `outputs/corner-scout/<time>-<business>/rank-N/` with their `edit_plan.json`.
+
+### 4. Preset business report (caption-based)
+
+Before the vision pass, the first version compared corners for four preset businesses using the supplied Cosmos captions alone. It still runs and produces a shareable browser page:
+
+```sh
 uv run python scripts/business_report.py
 
 # Serve the generated reports and videos locally.
 python -m http.server 8765 --bind 127.0.0.1 --directory outputs
 ```
 
-The business-report command prints `outputs/business-report/RUN/index.html`. Open **`http://localhost:8765/business-report/RUN/index.html#bike-shop`**, replacing `RUN` with the generated folder name. The `localhost` address works on the machine serving the report; share a hosted copy or a recorded walkthrough with remote judges.
+The command prints `outputs/business-report/RUN/index.html`. Open **`http://localhost:8765/business-report/RUN/index.html#bike-shop`**, replacing `RUN` with the generated folder name. The saved run recorded **28.1 seconds** for all four comparisons and their evidence reels, using footage already imported and indexed.
+
+![Bike-shop report comparing five corners, with Camera 3 ranked first and a playable evidence reel below](docs/assets/business-report-bike-shop.png)
+
+| You want to open… | The report looks for… | Result in this sample |
+| --- | --- | --- |
+| 🚲 **Bike shop** | Captions describing people riding bicycles | Camera 3 leads: **11 / 36** matching segments. |
+| ☕ **Café** | Groups of pedestrians | Camera 1 leads: **17 / 36**. |
+| 🚌 **Transit kiosk** | Buses | Cameras 2 and 4 tie: **15 / 36** each. |
+| 🐕 **Dog shop** | Dogs in the captions | **Not enough evidence to recommend a corner.** The best has only **2 / 36**. |
+
+**The parked-bike trap.** A search for any mention of a bicycle would put Camera 1 first; most of those captions describe something parked by a bin. The report narrows the signal to cyclist or riding language:
+
+| Corner | Segments mentioning any bicycle | Segments matching the riding signal |
+| --- | ---: | ---: |
+| **Camera 3** | 13 / 36 | **11 / 36** |
+| **Camera 5** | 11 / 36 | **9 / 36** |
+| **Camera 1** | **25 / 36** | 1 / 36 |
+
+Each number counts five-second caption segments, so the same cyclist may appear in more than one segment. The vision pass later identified Camera 1's parked object as a kick scooter, which is why Corner Scout counts zero cyclists there.
 
 The report writes:
 
@@ -166,7 +211,7 @@ outputs/business-report/RUN/
     └── clip-*.jpg             # Source stills and filmstrips
 ```
 
-The other business types and qualifying runner-up corners have their own evidence folders. To choose a destination or reuse headlines from a particular city report:
+To choose a destination or reuse headlines from a particular city report:
 
 ```sh
 uv run python scripts/business_report.py \
@@ -174,7 +219,11 @@ uv run python scripts/business_report.py \
   --duration 20 --output-dir outputs/business-report/my-demo
 ```
 
-### 4. Direct your own cut
+#### City report
+
+`uv run python scripts/city_report.py` summarizes every imported camera from its captions in about 40 seconds: a landmark headline, a short summary, an activity table computed by code, a reel per camera, and a best-moment-from-every-camera reel. It writes `outputs/city-report/RUN/index.html`.
+
+### 5. Direct your own cut
 
 For a custom visual brief, use the Gradio editor or CLI:
 
@@ -190,55 +239,40 @@ uv run highlight-agent undo REVISED_EDIT_ID
 
 The same workflow is available in the UI: source playback, brief cards, progress, a changing timeline, evidence previews, revision, undo, and downloads. Revisions preserve the selected source windows and keep the preceding edit available for undo.
 
-### Free-text Corner Scout prototype
-
-The linked business report uses existing captions and four presets. A separate prototype accepts a business description, maps it to audience weights, and ranks corners using cached vision-model estimates from one frame per segment:
-
-```sh
-uv run python scripts/vision_tags.py
-uv run python scripts/corner_scout.py
-# Opens on http://127.0.0.1:7861 by default.
-
-# Or generate a ranking from the command line:
-uv run python scripts/corner_scout.py --business 'bike repair shop'
-```
-
-Frame counts and audience categories are model estimates. They are separate from the caption-segment counts and measured run shown above.
-
-Tagging reuses valid cached observations and retries failed or invalid ones. Failed observations remain gaps rather than zero counts. The [alternate prototype demo plan](docs/DEMO_PLAN.md) records earlier free-text examples; the jury walkthrough above uses the preset business report.
-
 ## Under the hood
 
 ```mermaid
 flowchart LR
     Dataset[Supplied SF Streets chunks] --> Source[Normalized local recordings]
     Dataset --> Index[Existing VAST index and Cosmos captions]
-    Business[Business preset] --> Count[Count matching caption segments]
-    Index --> Count
-    Count --> Ranking[Rank corners in application code]
-    Ranking --> Pick[W&B selects evidence segment IDs]
-    Pick --> Plan[Validated source windows]
-    Source --> Render
-    Plan --> Render[FFmpeg]
-    Ranking --> Report[Browser report]
-    Render --> Report
-    Pick -. traces when available .-> Weave[Weave]
+    Source --> Frames[One frame per indexed segment]
+    Index --> Frames
+    Frames --> Vision[Gemma 4 vision on W&B: who and what is in each frame]
+    Business[Any business description] --> Audience[W&B text model: core and helpful audiences]
+    Vision --> Ranking[Rank corners in application code]
+    Audience --> Ranking
+    Ranking --> Plan[Validated source windows]
+    Source --> Render[FFmpeg]
+    Plan --> Render
+    Ranking --> App[Corner Scout app]
+    Render --> App
+    Audience -. traces when available .-> Weave[Weave]
 ```
 
 | Tool | Contribution | Evidence to inspect in a live run |
 | --- | --- | --- |
-| **VAST** | Read supplied media and indexed caption segments; search them for custom briefs. | Original source URIs, chunk mapping, index status, and retrieved records. |
-| **NVIDIA Cosmos** | Supply existing visual captions from the dataset's hosted ingestion. | Returned segment model IDs, confirmed against the deployment. |
-| **W&B Inference** | Select evidence segment IDs for business reports; summarize cameras; translate and rank custom briefs. | Actual model calls and selected IDs. |
+| **VAST** | Read supplied media and indexed caption segments; their segment windows define every evidence clip. Search them for custom briefs. | Original source URIs, chunk mapping, index status, and retrieved records. |
+| **NVIDIA Cosmos** | Supply existing visual captions from the dataset's hosted ingestion; they power the preset report, city report, and editor. | Returned segment model IDs, confirmed against the deployment. |
+| **W&B Inference** | Gemma 4 vision estimates who passes in each frame; a text model turns a business into target audiences. Also selects evidence for preset reports, summarizes cameras, and translates and ranks custom briefs. | Cached vision observations, actual model calls, and selected IDs. |
 | **W&B Weave** | Trace provider and application calls when configured. | Trace links returned by the run, when available. |
-| **FFmpeg** | Extract, normalize, and concatenate source windows; optionally mix demo narration. | Playable output and measured render timing. |
-| **Gradio** | Provide the conversational editor and separate free-text Corner Scout interface. | The local applications. |
+| **FFmpeg** | Extract frames; extract, normalize, and concatenate source windows; optionally mix demo narration. | Playable output and measured render timing. |
+| **Gradio** | Provide the Corner Scout app and the conversational editor. | The local applications. |
 
-**Application code ranks the corners. The model chooses evidence clips.** The preset business report counts caption segments matching explicit patterns, orders corners by those counts, and asks W&B to choose known segment IDs from the matching candidates. Riding patterns narrow bicycle mentions to cyclist/riding language; source clips let viewers check the result.
+**Application code ranks the corners. Models only estimate and describe.** In Corner Scout, the vision model estimates counts per frame and the text model chooses which audiences matter; code scores each audience by how often it appears at a corner relative to the corner where it appears most, weights core audiences at 75% of the match, ignores categories present everywhere (ordinary adults, mid-range cars), and refuses to recommend below three core-audience frames. The preset report counts caption segments matching explicit patterns and asks W&B only to choose known segment IDs as evidence.
 
 **Application code also controls timestamps.** The shared selector adds two seconds of setup and three seconds of aftermath, clamps to the source, skips overlapping street scenes, and fits complete events into the budget. A shorter reel is valid when fewer complete matches fit.
 
-The custom-brief editor uses VAST retrieval followed by W&B ranking. Both caption-based workflows reuse the supplied Cosmos captions. Credentials, the hosted index, and source footage are not bundled. See the [validation notes](docs/VALIDATION.md) for measured evidence and remaining checks.
+The custom-brief editor uses VAST retrieval followed by W&B ranking. The caption-based workflows reuse the supplied Cosmos captions. Credentials, the hosted index, and source footage are not bundled. See the [validation notes](docs/VALIDATION.md) for measured evidence and remaining checks.
 
 ## Inputs, outputs, and evidence
 
@@ -268,6 +302,15 @@ uv run pytest -q
 ```
 
 Tests cover provider contracts with mocked HTTP responses, interval selection, source integrity, persistence, revision/undo, malformed model output, CLI failures, human evaluation, and actual FFmpeg exports. The [validation notes](docs/VALIDATION.md) record local browser and rendering checks, with live checks listed separately.
+
+For Corner Scout, spot-check the vision estimates behind each core audience used in the demo. List the frames where an audience was counted, extract them, and confirm by eye:
+
+```sh
+uv run python -c "import json; d=json.load(open('data/vision/VIDEO_ID.json')); print([f['seconds'] for f in d['frames'] if f['counts']['dog']])"
+ffmpeg -loglevel error -ss SECONDS -i data/media/VIDEO_ID.mp4 -frames:v 1 check.jpg
+```
+
+The planned check covers the three dog frames at Camera 5, five premium-car frames at Camera 1, and five young-adult frames at Camera 2. **Status: pending human review.** Report only the reviewed agreement count. The rankings in the tables above come from saved runs on 17 October; rerun them after changing the vision cache or scoring code.
 
 For the business report, inspect `report.json`, check the segment counts against the indexed captions, and watch every evidence reel against its named source. Confirm that business tabs change the ranking, tied corners remain tied, and sparse evidence produces no recommendation. The saved example above is from `outputs/business-report/20261017-140003/report.json`; generated reports and footage remain local and are ignored by Git. The counts demonstrate the report's behavior and do not establish caption accuracy or commercial demand.
 
@@ -307,7 +350,7 @@ uv run highlight-agent demo examples/demo-plan-extended.json --output-dir output
 
 First replace the illustrative scene windows with measured timestamps from `data/rehearsal.mp4`. Paths resolve relative to the manifest. An optional `narration_path` points to human narration recorded against the assembled cut. These example manifests are templates, rather than prerecorded successful runs; presentation scene selection is manual.
 
-Lead with the **60-second business walkthrough above**. The [editor demo guide](docs/DEMO_SCRIPT.md) covers optional revision and undo, and the [recording/toolchain guide](demo-video-toolchain-setup.md) covers capture and assembly. Use fresh requests when measured latency fits the slot; label saved runs and disclose shortened waits. Claim that the demo was assembled with the tool only after rendering the real rehearsal this way.
+Lead with the [Corner Scout walkthrough](#a-2-minute-walkthrough); the [demo plan](docs/DEMO_PLAN.md) has the full script. The [editor demo guide](docs/DEMO_SCRIPT.md) covers optional revision and undo, and the [recording/toolchain guide](demo-video-toolchain-setup.md) covers capture and assembly. Use fresh requests when measured latency fits the slot; label saved runs and disclose shortened waits. Claim that the demo was assembled with the tool only after rendering the real rehearsal this way.
 
 ### Hackathon handoff
 

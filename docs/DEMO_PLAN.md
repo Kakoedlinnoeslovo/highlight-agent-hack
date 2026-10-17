@@ -1,9 +1,9 @@
-# Alternate prototype demo plan — Corner Scout
+# Demo plan — Corner Scout
 
-Alternate prototype plan · Real-Time Video Agents Hack · London · 17 October 2026
+Final plan · Real-Time Video Agents Hack · London · 17 October 2026
 Submission closes **4:30 PM BST** (target **4:15 PM**). Target recording deadline: **3:45 PM**. First round: **2 minutes**. Top-five final: **3 minutes at 6 PM**.
 
-The current jury example is the [preset business-report walkthrough in the README](../README.md#a-60-second-jury-walkthrough). This alternate plan preserves earlier free-text prototype examples; its frame estimates, rankings, and timings describe those saved exploratory runs and need checking after cache or code changes. Human quality review and the submission recording remain pending.
+Corner Scout leads the demo, matching the [README walkthrough](../README.md#a-2-minute-walkthrough). The caption-based [preset business report](../README.md#4-preset-business-report-caption-based) is the backup, and the city report is the three-minute finale. Frame estimates, rankings, and timings below come from saved runs on 17 October; rerun them after changing the vision cache or scoring code. The human spot-check and the submission recording remain pending.
 
 ## The pitch
 
@@ -88,7 +88,7 @@ Never say: foot-traffic numbers, revenue, "guaranteed best location", or anythin
 
 ## Prep checklist (in order)
 
-1. **Coordinate with the ChatGPT agent (2 min).** It is editing `scripts/business_report.py`, `highlight_agent/service.py`, and tests in this repo. Tell it the demo is Corner Scout, ask it not to change `scripts/corner_scout.py`, `scripts/vision_tags.py`, or `scripts/city_report.py`, and agree who commits what.
+1. **Keep one writer (1 min).** The ChatGPT agent has been told to stop editing docs. Before any further change, agree which agent commits, so the README, this plan, and PR #3 stay consistent.
 2. **Start the app (1 min).** SSH tunnel up (see README), then:
    ```sh
    uv run python scripts/corner_scout.py
@@ -102,7 +102,7 @@ Never say: foot-traffic numbers, revenue, "guaranteed best location", or anythin
    ```
    Check the 3 dog frames (Camera 5), 5 premium-car frames (Camera 1, `c0cc58e7d4da405eaf1e9bb01c83fa55`), and 5 young-adult frames (Camera 2, `32f844ce3dc4472c9d4596ad8afe90a0`). Record "X of 13 confirmed" and put only that reviewed number in the README.
 5. **Record the two-minute run (by 3:45 PM).** 16:9 browser, text readable at 720p. Hide `.env`, tunnel commands, keys, and personal tabs.
-6. **Update the README (10 min).** Add a Corner Scout section: what it does, the two run commands, the sponsor roles, the reviewed spot-check result, and the limits above. Judges read the README.
+6. **Record the spot-check in the README (2 min).** Replace “Status: pending human review” in [Prove the result](../README.md#prove-the-result) with the reviewed count. Judges read the README.
 7. **Submit (by 4:15 PM).** Repo, shareable video, tool description, all team names and emails. Open the video link without logging in.
 
 ## Fallbacks
@@ -110,6 +110,7 @@ Never say: foot-traffic numbers, revenue, "guaranteed best location", or anythin
 | If… | Then… |
 | --- | --- |
 | W&B Inference is down or slow | Play the recorded run; ranking needs the text model for each new business. |
+| Corner Scout can't run at all | Open the saved preset business report (`outputs/business-report/RUN/index.html`, served on port 8765) and walk the bike-shop and dog-shop tabs. |
 | A result looks wrong on stage | Open its evidence clips and say what the frames show — that is the point of evidence. |
 | The app won't start | Check port 7861 is free; restart with the command above. |
 | W&B returns HTTP 401 | Check `WANDB_PROJECT` points to your own workspace. |
