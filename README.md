@@ -9,6 +9,8 @@ with ranked results and playable source clips.
 
 *Real-Time Video Agents Hack · London · 17 October 2026*
 
+[![Live demo on Vercel: corner-scout-rouge.vercel.app](https://img.shields.io/badge/Live%20demo-corner--scout--rouge.vercel.app-000000?style=for-the-badge&logo=vercel&logoColor=white)](https://corner-scout-rouge.vercel.app)
+
 ![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)
 ![Node.js 24](https://img.shields.io/badge/Node.js-24-5FA04E?logo=nodedotjs&logoColor=white)
 ![W&B Inference](https://img.shields.io/badge/W%26B-Inference-FCC400?logo=weightsandbiases&logoColor=black)
