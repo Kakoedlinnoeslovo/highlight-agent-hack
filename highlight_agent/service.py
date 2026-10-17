@@ -16,7 +16,7 @@ from uuid import uuid4
 from .config import Settings
 from .inference import InferenceClient
 from .media import preview_window, probe_media, render_edit_plan
-from .models import HighlightResult, Moment, VideoRecord
+from .models import EditPlan, EditWindow, HighlightResult, Moment, SourceChunk, VideoRecord
 from .selection import SelectionError, create_plan, revise_plan, select_windows
 from .storage import read_json, write_json
 from .tracing import Tracer
@@ -176,6 +176,111 @@ class HighlightService:
         )
         return self._save_video(video)
 
+    def dataset_sources(self) -> list[dict]:
+        if self.config.mode != "live":
+            raise ServiceError("The supplied SF Streets dataset requires live mode.")
+        return self._vast_client().dataset_sources()
+
+    def import_dataset_source(self, original_video: str) -> VideoRecord:
+        """Build a local excerpt from supplied objects and reuse their existing index."""
+        source = next((item for item in self.dataset_sources()
+                       if item["original_video"] == original_video), None)
+        if source is None:
+            raise ServiceError("Choose a video from the supplied SF Streets dataset.")
+        cached = None
+        for video in self.list_videos():
+            if video.dataset == "sf-streets" and video.original_video == original_video:
+                try:
+                    self._verify_source(video)
+                except ServiceError:
+                    cached = video
+                    if video.source_chunks:
+                        # Recover the registered excerpt, even if the listing has
+                        # since acquired more chunks or changed indexed coverage.
+                        source = {**source, "label": video.label, "chunks": [
+                            {"original_video": chunk.original_video, "duration": chunk.duration}
+                            for chunk in video.source_chunks
+                        ]}
+                    break
+                else:
+                    return self.refresh_index(video.id)
+        media_dir = self.config.data_dir / "media"
+        media_dir.mkdir(parents=True, exist_ok=True)
+        video_id = cached.id if cached else uuid4().hex
+        destination = cached.local_path if cached else media_dir / f"{video_id}.mp4"
+        previous_chunks = {chunk.original_video: chunk for chunk in cached.source_chunks} if cached else {}
+        chunks = []
+        offset = 0.0
+        provider = self._vast_client()
+        with tempfile.TemporaryDirectory(prefix=".sf-streets-", dir=media_dir) as folder:
+            paths = []
+            for index, chunk in enumerate(source["chunks"]):
+                path = Path(folder) / f"chunk-{index}.mp4"
+                provider.download_dataset_source(chunk["original_video"], path)
+                fingerprint = _sha256(path)
+                previous = previous_chunks.get(chunk["original_video"])
+                if previous and previous.source_sha256 and fingerprint != previous.source_sha256:
+                    raise ServiceError("The supplied dataset object changed. Restore the matching media before retrying.")
+                info = probe_media(path)
+                # The browse duration is indexed coverage, not full media length.
+                # Exclude uncaptioned encoder tails and keep [0, indexed end].
+                if chunk["duration"] > info.duration + 0.1:
+                    raise ServiceError(
+                        f"Dataset media duration does not match indexed coverage: chunk {index + 1} "
+                        f"measures {info.duration:.3f}s; its index requires {chunk['duration']:.3f}s."
+                    )
+                included_duration = min(info.duration, chunk["duration"])
+                plan = EditPlan(
+                    id=f"dataset-{index}", video_id=video_id, source_path=path,
+                    source_duration=info.duration, prompt="Prepare the supplied indexed excerpt.",
+                    windows=[EditWindow(moment_ids=[f"chunk-{index}"], start_seconds=0,
+                                        end_seconds=included_duration)],
+                    max_duration=max(30, included_duration),
+                )
+                normalized = render_edit_plan(plan, Path(folder) / f"normalized-{index}")
+                measured_duration = probe_media(normalized).duration
+                if previous and abs(measured_duration - previous.duration) > 0.001:
+                    raise ServiceError("The rebuilt dataset timing does not match the registered excerpt.")
+                chunks.append(SourceChunk(
+                    original_video=chunk["original_video"], start_seconds=offset,
+                    duration=measured_duration, source_duration=info.duration,
+                    source_sha256=fingerprint,
+                ))
+                offset += measured_duration
+                # Use generated flat names for the concat demuxer's safe mode.
+                normalized_path = Path(folder) / f"prepared-{index}.mp4"
+                normalized.replace(normalized_path)
+                paths.append(normalized_path)
+            # The concat manifest contains only generated local filenames. Source
+            # offsets come from measured media, never capture filename clocks.
+            manifest = Path(folder) / "concat.txt"
+            manifest.write_text("".join(f"file '{path.name}'\n" for path in paths))
+            assembled = Path(folder) / "assembled.mp4"
+            try:
+                subprocess.run([
+                    "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "concat",
+                    "-safe", "1", "-i", str(manifest), "-map", "0:v:0", "-map", "0:a?",
+                    "-c", "copy", "-movflags", "+faststart", str(assembled),
+                ], check=True, capture_output=True, timeout=180)
+            except (OSError, subprocess.SubprocessError):
+                raise ServiceError("Could not assemble the dataset excerpt. Check FFmpeg and retry.") from None
+            info = probe_media(assembled)
+            if abs(info.duration - offset) > 0.1:
+                raise ServiceError("Assembled dataset timestamps do not match its source chunks.")
+            video = VideoRecord(
+                id=video_id, label=source["label"], local_path=destination, duration=offset,
+                original_video=original_video, index_status="indexing", dataset="sf-streets",
+                source_chunks=chunks, content_sha256=_sha256(assembled), mode="live",
+            )
+            # Validate the original chunk captions before exposing the recording.
+            rows = provider.segments(video)
+            video = self._with_index_status(video, rows)
+            if video.index_status != "ready":
+                raise ServiceError("The dataset excerpt is not completely indexed. Retry the import later.")
+            assembled.replace(destination)
+        write_json(self._index_path(video.id), rows)
+        return self._save_video(video)
+
     def ingest_video(self, video_id: str) -> VideoRecord:
         video = self.get_video(video_id)
         if self.config.mode != "live":
@@ -208,6 +313,10 @@ class HighlightService:
             )
         rows = self._vast_client().segments(video)
         write_json(self._index_path(video.id), rows)
+        return self._save_video(self._with_index_status(video, rows))
+
+    @staticmethod
+    def _with_index_status(video: VideoRecord, rows: list[dict]) -> VideoRecord:
         windows = sorted((float(row["start_seconds"]), float(row["end_seconds"])) for row in rows)
         coverage = 0.0
         gap = False
@@ -233,7 +342,7 @@ class HighlightService:
                 "error": None,
             }
         )
-        return self._save_video(video)
+        return video
 
     def _run_stage(self, name, action, inputs, parent, timings, progress):
         progress(name.replace("_", " "))
@@ -389,6 +498,8 @@ class HighlightService:
                 "mode": self.config.mode,
                 "queries": queries,
                 "video_id": video.id,
+                "dataset": video.dataset,
+                "source_chunks": [chunk.model_dump(mode="json") for chunk in video.source_chunks],
                 "reported_caption_model": video.caption_model,
                 "retrieved": [item.model_dump(mode="json") for item in retrieved.values()],
                 "selected": [item.model_dump(mode="json") for item in result.moments],

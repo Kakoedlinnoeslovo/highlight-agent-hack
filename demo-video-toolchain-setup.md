@@ -34,7 +34,7 @@ Default output: **1280×720, 30 fps, H.264/AAC, `yuv420p`, `+faststart`**. Below
 
 Scenes play in listed order and may jump around the recording. Each interval must fit the actual source. The selected total must fit the budget; do not fabricate or stretch progress. Optional narration follows the same relative-path rule. JSON examples are templates, not evidence that live runs already succeeded.
 
-After the renderer has assembled the real rehearsal, say: **“The highlights—and the assembly of this demo—were made with our tool.”** Presentation scene selection is manual; semantic gameplay search has not been validated for screen recordings.
+After the renderer has assembled the real rehearsal, say: **“The highlights—and the assembly of this demo—were made with our tool.”** Presentation scene selection is manual; semantic video search has not been validated for screen recordings.
 
 ## Optional tools, after the primary export
 

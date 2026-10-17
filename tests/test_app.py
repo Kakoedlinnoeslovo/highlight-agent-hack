@@ -1,8 +1,12 @@
-"""Keep saved edit timing separate from the time spent restoring it."""
+"""UI provenance, dataset selection, and saved timing behavior."""
+
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
-from app import _request_seconds
+from app import PRO_BRIEF, ROAST_BRIEF, _request_seconds, build_app
+from highlight_agent.briefs import STREET_PEOPLE_BRIEF, STREET_REVISION, STREET_TRAFFIC_BRIEF
 
 
 @pytest.mark.parametrize(
@@ -21,3 +25,211 @@ def test_restored_edit_uses_saved_timing_or_reports_it_unavailable(timings, expe
 
 def test_current_revision_uses_actual_request_elapsed_when_only_render_was_saved():
     assert _request_seconds({"render": 12.34}, 15.0, restored=False) == 15.0
+
+
+class DatasetService:
+    def __init__(self, *, mode="live", include_dataset=True):
+        self.mode = mode
+        self.calls = []
+        self.records = [
+            {
+                "id": "legacy",
+                "label": "Earlier gameplay",
+                "local_path": "gameplay.mp4",
+                "duration": 60,
+            },
+        ]
+        self.city = {
+            "id": "street",
+            "label": "SF Streets · camera 5",
+            "local_path": "street.mp4",
+            "duration": 180,
+            "dataset": "sf-streets",
+            "index_status": "ready",
+        }
+        if include_dataset:
+            self.records.append(self.city)
+
+    def status(self):
+        return {"mode": self.mode}
+
+    def list_videos(self):
+        return self.records
+
+    def dataset_sources(self):
+        self.calls.append(("browse",))
+        return [
+            {
+                "original_video": "https://dataset.example/cam5/001.mp4",
+                "label": self.city["label"],
+                "segment_count": 6,
+            }
+        ]
+
+    def import_dataset_source(self, original_video):
+        self.calls.append(("import", original_video))
+        self.records.append(self.city)
+        return self.city
+
+
+def component(app, label):
+    return next(item for item in app.blocks.values() if getattr(item, "label", None) == label)
+
+
+def callback(app, name):
+    return next(item.fn for item in app.fns.values() if item.fn.__name__ == name)
+
+
+def test_live_construction_uses_only_supplied_dataset_without_provider_calls():
+    service = DatasetService()
+    app = build_app(service)
+
+    sources = component(app, "Source recording")
+    assert sources.choices == [(service.city["label"], "street")]
+    assert sources.value == "street"
+    assert component(app, "Original recording").value["path"].endswith("street.mp4")
+    assert service.calls == []
+    assert not any(getattr(item, "label", None) == "Video file" for item in app.blocks.values())
+    assert component(app, "Revision").value == STREET_REVISION
+    button_values = [
+        getattr(item, "value", None)
+        for item in app.blocks.values()
+        if item.__class__.__name__ == "Button"
+    ]
+    assert STREET_PEOPLE_BRIEF + "  ↗" in button_values
+    assert STREET_TRAFFIC_BRIEF + "  ↗" in button_values
+
+
+def test_live_dataset_browse_import_and_source_change_update_existing_editor():
+    service = DatasetService(include_dataset=False)
+    app = build_app(service)
+    assert component(app, "Source recording").value is None
+    assert component(app, "Source recording").choices == []
+
+    choices, action, notice = callback(app, "browse_dataset")()
+    original = "https://dataset.example/cam5/001.mp4"
+    assert choices["choices"] == [(service.city["label"] + " · 6 indexed segments", original)]
+    assert choices["value"] == original
+    assert action["interactive"] is True
+    assert "Found 1 SF Streets recordings" in notice
+
+    sources, metadata, notice = callback(app, "import_dataset_source")(original)
+    assert sources["choices"] == [(service.city["label"], "street")]
+    assert sources["value"] == "street"
+    assert "READY" in metadata
+    assert "footage ready" in notice
+    assert service.calls == [("browse",), ("import", original)]
+
+    changed = callback(app, "choose_source")(
+        "street",
+        {
+            "video_id": "legacy",
+            "edit_id": "old",
+            "windows": [{"start_seconds": 1, "end_seconds": 5}],
+        },
+    )
+    assert changed[2]["value"] == "street.mp4"
+    assert changed[3] == {"edit_id": None, "video_id": "street", "windows": []}
+    assert changed[8] == []  # Clear the previous cut's evidence rows.
+
+
+def test_offline_sample_preserves_existing_fixture_sources_and_directions():
+    app = build_app(DatasetService(mode="offline_sample", include_dataset=False))
+    assert component(app, "Source recording").choices == [("Earlier gameplay", "legacy")]
+    assert component(app, "Video file") is not None
+    button_values = [
+        getattr(item, "value", None)
+        for item in app.blocks.values()
+        if item.__class__.__name__ == "Button"
+    ]
+    assert PRO_BRIEF + "  ↗" in button_values
+    assert ROAST_BRIEF + "  ↗" in button_values
+
+
+class EditSessionService(DatasetService):
+    def __init__(self, result_video="street"):
+        super().__init__()
+        self.result_video = result_video
+
+    def get_result(self, edit_id):
+        self.calls.append(("read", edit_id))
+        return {
+            "edit_plan": {
+                "id": edit_id,
+                "video_id": self.result_video,
+                "source_duration": 180,
+                "windows": [
+                    {
+                        "start_seconds": 1,
+                        "end_seconds": 4,
+                        "moment_ids": ["m"],
+                        "caption": "A pedestrian crosses.",
+                    }
+                ],
+            },
+            "output_path": "cut.mp4",
+            "mode": "live",
+        }
+
+    def revise_edit(self, edit_id, instruction, progress=None):
+        self.calls.append(("revise", edit_id))
+        return self.get_result("revised")
+
+    def undo_edit(self, edit_id):
+        self.calls.append(("undo", edit_id))
+        return self.get_result("previous")
+
+    def preview_moment(self, edit_id, index):
+        self.calls.append(("preview", edit_id))
+        return Path("preview.mp4")
+
+
+def session_action(app, action, session):
+    if action == "preview":
+        return callback(app, action)(session, SimpleNamespace(index=0))[1]
+    values = list(
+        callback(app, action)("Remove clip two", session)
+        if action == "revise"
+        else callback(app, action)(session)
+    )
+    return values[-1][7]
+
+
+@pytest.mark.parametrize("action", ["revise", "undo", "preview"])
+@pytest.mark.parametrize(
+    ("session_video", "result_video"), [("legacy", "legacy"), ("street", "legacy")]
+)
+def test_live_edit_actions_reject_stale_or_mismatched_legacy_sessions(
+    action, session_video, result_video
+):
+    service = EditSessionService(result_video)
+    app = build_app(service)
+    notice = session_action(
+        app, action, {"video_id": session_video, "edit_id": "old-edit", "windows": []}
+    )
+
+    assert "ha-stage error" in notice
+    assert not any(call[0] in {"revise", "undo", "preview"} for call in service.calls)
+
+
+@pytest.mark.parametrize("action", ["revise", "undo", "preview"])
+def test_live_edit_actions_allow_edits_belonging_to_current_dataset_source(action):
+    service = EditSessionService()
+    app = build_app(service)
+    session_action(app, action, {"video_id": "street", "edit_id": "street-edit", "windows": []})
+    assert (action, "street-edit") in service.calls
+
+
+def test_source_change_clears_stale_edit_even_when_invalid_video_id_has_not_changed():
+    app = build_app(DatasetService())
+    values = callback(app, "choose_source")(
+        "legacy",
+        {
+            "video_id": "legacy",
+            "edit_id": "old-edit",
+            "windows": [{"start_seconds": 1, "end_seconds": 5}],
+        },
+    )
+    assert values[2]["value"] is None
+    assert values[3]["edit_id"] is None
+    assert values[3]["windows"] == []

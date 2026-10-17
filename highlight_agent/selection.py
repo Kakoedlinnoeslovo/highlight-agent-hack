@@ -56,9 +56,20 @@ def select_windows(
         )
     selected: list[EditWindow] = []
     for candidate in sorted(candidates, key=lambda item: (-item.score, item.start_seconds)):
+        if video.dataset == "sf-streets":
+            # Dense street captions often describe adjacent five-second slices.
+            # Keep separate complete moments so the reel can still be revised.
+            if any(
+                candidate.start_seconds < window.end_seconds
+                and candidate.end_seconds > window.start_seconds
+                for window in selected
+            ):
+                continue
+            proposal = [*selected, candidate]
+        else:
+            proposal = _merge_windows([*selected, candidate])
         # Admit complete padded events in rank order. A neighboring match must
         # not turn an already feasible edit into an over-budget merged interval.
-        proposal = _merge_windows([*selected, candidate])
         if (
             len(proposal) <= 4
             and sum(window.duration for window in proposal) <= max_duration + 0.00001
@@ -89,9 +100,7 @@ def create_plan(
 def revise_plan(plan: EditPlan, instruction: str) -> EditPlan:
     """Two supported commands, parsed without an unconstrained agent or new timestamp inference."""
     text = instruction.lower().strip().rstrip(".! ")
-    strongest = (
-        r"(?:put|move) (?:the )?(?:highest[- ]ranked|biggest|strongest)(?: crash| clip)? first"
-    )
+    strongest = r"(?:put|move) (?:the )?(?:highest[- ]ranked|biggest|strongest)(?: crash| clip| moment)? first"
     remove = r"remove (?:clip )?(one|two|three|four|[1-4])"
     match = re.fullmatch(rf"(?:{remove})(?: and {strongest})?", text)
     reorder = re.fullmatch(strongest, text)

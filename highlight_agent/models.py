@@ -13,6 +13,22 @@ class Record(BaseModel):
     model_config = ConfigDict(allow_inf_nan=False, extra="forbid")
 
 
+class SourceChunk(Record):
+    """Exact dataset object and its measured offset in the local assembled recording."""
+
+    original_video: str = Field(pattern=r"^s3://[^/\s]+/.+")
+    start_seconds: float = Field(ge=0)
+    duration: float = Field(gt=0)
+    source_duration: float | None = Field(default=None, gt=0)
+    source_sha256: str = ""
+
+    @model_validator(mode="after")
+    def included_interval(self):
+        if self.source_duration is not None and self.duration > self.source_duration + 0.08:
+            raise ValueError("An included dataset excerpt cannot exceed its original media.")
+        return self
+
+
 class VideoRecord(Record):
     id: str
     label: str
@@ -24,6 +40,24 @@ class VideoRecord(Record):
     mode: Literal["live", "offline_sample"] = "live"
     content_sha256: str = ""
     error: str | None = None
+    dataset: str | None = None
+    source_chunks: list[SourceChunk] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_source_chunks(self):
+        if self.source_chunks:
+            end = 0.0
+            seen: set[str] = set()
+            for chunk in self.source_chunks:
+                if chunk.original_video in seen or abs(chunk.start_seconds - end) > 0.05:
+                    raise ValueError("Dataset chunks must be unique and contiguous.")
+                seen.add(chunk.original_video)
+                end += chunk.duration
+            if abs(end - self.duration) > 0.1:
+                raise ValueError("Dataset chunk durations must match the local recording.")
+            if self.original_video != self.source_chunks[0].original_video:
+                raise ValueError("The dataset source must identify its first exact chunk.")
+        return self
 
 
 class Moment(Record):

@@ -9,7 +9,7 @@ from pydantic import Field, model_validator
 from .models import Record
 from .storage import read_json
 
-Label = Literal["crash", "clean_landing", "ordinary"]
+Label = Literal["crash", "clean_landing", "people", "traffic", "ordinary"]
 
 
 class EvaluationCase(Record):
@@ -29,17 +29,20 @@ class EvaluationCase(Record):
 
 class EvaluationManifest(Record):
     video_id: str
+    profile: Literal["gameplay", "sf-streets"] = "gameplay"
     cases: list[EvaluationCase]
 
     @model_validator(mode="after")
     def six_balanced_cases(self):
-        if Counter(case.label for case in self.cases) != {
-            "crash": 2,
-            "clean_landing": 2,
-            "ordinary": 2,
-        }:
+        if self.profile == "sf-streets":
+            expected = {"people": 2, "traffic": 2, "ordinary": 2}
+            description = "two pedestrians/cyclists, two buses/traffic, two ordinary"
+        else:
+            expected = {"crash": 2, "clean_landing": 2, "ordinary": 2}
+            description = "two crashes, two clean landings, two ordinary"
+        if Counter(case.label for case in self.cases) != expected:
             raise ValueError(
-                "Use exactly six cases: two crashes, two clean landings, two ordinary."
+                f"Use exactly six cases for {self.profile}: {description}."
             )
         return self
 
@@ -82,14 +85,18 @@ def evaluate_manifest(path: Path, service) -> dict:
     false_clean = any(
         case["label"] == "crash" and case["observed_label"] == "clean_landing" for case in cases
     )
+    required_types = (
+        {"people", "traffic"} if manifest.profile == "sf-streets" else {"crash", "clean_landing"}
+    )
     passed = (
         reviewed
         and correct >= 5
-        and {"crash", "clean_landing"} <= positive_types
+        and required_types <= positive_types
         and not false_clean
     )
     return {
         "video_id": video.id,
+        "profile": manifest.profile,
         "mode": video.mode,
         "evaluation_kind": "human_review_of_indexed_captions",
         "status": "needs_review" if not reviewed else "passed" if passed else "failed",
@@ -98,7 +105,7 @@ def evaluate_manifest(path: Path, service) -> dict:
         "reported_caption_model": video.caption_model,
         "no_crash_mislabeled_clean": not false_clean,
         "cases": cases,
-        "note": "Synthetic fixtures validate plumbing only; they do not measure gameplay understanding."
+        "note": "Synthetic fixtures validate plumbing only; they do not measure source understanding."
         if video.mode == "offline_sample"
         else "Human annotations must be checked against the source video.",
     }

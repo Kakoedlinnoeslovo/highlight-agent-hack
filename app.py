@@ -20,6 +20,7 @@ from urllib.parse import urlsplit
 
 import gradio as gr
 
+from highlight_agent.briefs import STREET_PEOPLE_BRIEF, STREET_REVISION, STREET_TRAFFIC_BRIEF
 from highlight_agent.service import HighlightService
 
 PRO_BRIEF = "Make me look like a pro."
@@ -173,17 +174,17 @@ def _provenance(status: dict[str, Any]) -> str:
         names = ", ".join(_escape(item) for item in missing)
         return (
             '<div class="ha-provenance"><strong>LIVE MODE · SETUP NEEDED</strong> · Configure '
-            f"{names}. Your media can be registered before connecting the providers.</div>"
+            f"{names}. Browse the supplied SF Streets dataset after connecting VAST.</div>"
         )
     return (
-        '<div class="ha-provenance"><strong>LIVE MODE</strong> · VAST search · Cosmos ingestion captions '
-        "· W&amp;B query and ranking. Evidence and trace links appear after an actual run.</div>"
+        '<div class="ha-provenance"><strong>LIVE MODE · SF STREETS</strong> · Supplied dataset footage '
+        "· VAST caption search · W&amp;B query and ranking. Evidence and trace links appear after an actual run.</div>"
     )
 
 
 def _video_metadata(video: Any | None) -> str:
     if video is None:
-        return '<div class="ha-source-meta">Choose a source or add your recording below.</div>'
+        return '<div class="ha-source-meta">Choose a source from the library below.</div>'
     status = str(_get(video, "index_status", "local"))
     model = _get(video, "caption_model")
     model_note = f'<span class="ha-chip">{_escape(model)}</span>' if model else ""
@@ -191,6 +192,11 @@ def _video_metadata(video: Any | None) -> str:
         f'<div class="ha-source-meta"><span class="ha-chip">{_clock(_get(video, "duration", 0))} source</span>'
         f'<span class="ha-chip {_escape(status)}">{_escape(status.upper())}</span>{model_note}</div>'
     )
+
+
+def _source_library(videos: list[Any], *, offline: bool) -> list[Any]:
+    """Keep earlier personal recordings out of the supplied dataset experience."""
+    return videos if offline else [item for item in videos if _get(item, "dataset") == "sf-streets"]
 
 
 def _timeline(
@@ -289,9 +295,7 @@ def _result_rows(result: Any) -> list[list[Any]]:
     return rows
 
 
-def _request_seconds(
-    timings: dict[str, float], elapsed: float, *, restored: bool
-) -> float | None:
+def _request_seconds(timings: dict[str, float], elapsed: float, *, restored: bool) -> float | None:
     measured = timings.get("total", timings.get("total_seconds"))
     if measured is not None:
         return float(measured)
@@ -334,16 +338,24 @@ def build_app(service: HighlightService | None = None) -> gr.Blocks:
     """Construct the UI without contacting any external providers."""
     service = service or HighlightService()
     status = service.status()
-    videos = service.list_videos()
+    offline = status.get("mode") == "offline_sample"
+    videos = _source_library(service.list_videos(), offline=offline)
     first = videos[0] if videos else None
+    first_brief = PRO_BRIEF if offline else STREET_PEOPLE_BRIEF
+    second_brief = ROAST_BRIEF if offline else STREET_TRAFFIC_BRIEF
 
     def video_by_id(video_id: str | None) -> Any | None:
         return next(
-            (item for item in service.list_videos() if str(_get(item, "id")) == str(video_id)), None
+            (
+                item
+                for item in _source_library(service.list_videos(), offline=offline)
+                if str(_get(item, "id")) == str(video_id)
+            ),
+            None,
         )
 
     def library(video: Any | None = None) -> tuple[Any, str]:
-        items = service.list_videos()
+        items = _source_library(service.list_videos(), offline=offline)
         value = str(_get(video, "id")) if video else (str(_get(items[0], "id")) if items else None)
         return gr.update(
             choices=[
@@ -360,7 +372,7 @@ def build_app(service: HighlightService | None = None) -> gr.Blocks:
             gr.update(open=not bool(video)),
             gr.update(value=str(_get(video, "local_path")) if video else None),
         )
-        if session.get("video_id") == video_id:
+        if video is not None and session.get("video_id") == video_id:
             return (*source_values, *(gr.skip() for _ in range(12)))
         cleared = (
             {"edit_id": None, "video_id": video_id, "windows": []},
@@ -390,6 +402,42 @@ def build_app(service: HighlightService | None = None) -> gr.Blocks:
                 choices,
                 metadata,
                 _notice("Source registered. Index it, or connect an existing VAST source."),
+            )
+        except Exception as error:
+            return gr.skip(), gr.skip(), _notice(_error_message(error), error=True)
+
+    def browse_dataset() -> tuple[Any, Any, str]:
+        try:
+            items = service.dataset_sources()
+            choices = []
+            for item in items:
+                count = _get(item, "segment_count")
+                label = str(_get(item, "label", "SF Streets recording"))
+                if count is not None:
+                    label += f" · {count} indexed segments"
+                choices.append((label, str(_get(item, "original_video"))))
+            return (
+                gr.update(choices=choices, value=choices[0][1] if choices else None),
+                gr.update(interactive=bool(choices)),
+                _notice(
+                    f"Found {len(choices)} SF Streets recordings. Choose one to download its original footage."
+                    if choices
+                    else "No SF Streets recordings were found in the configured dataset index."
+                ),
+            )
+        except Exception as error:
+            return gr.skip(), gr.skip(), _notice(_error_message(error), error=True)
+
+    def import_dataset_source(original_video: str | None) -> tuple[Any, str, str]:
+        try:
+            if not original_video:
+                raise ValueError("Browse SF Streets and choose a dataset recording first.")
+            video = service.import_dataset_source(original_video)
+            choices, metadata = library(video)
+            return (
+                choices,
+                metadata,
+                _notice("SF Streets footage ready. Choose a direction to make a cut."),
             )
         except Exception as error:
             return gr.skip(), gr.skip(), _notice(_error_message(error), error=True)
@@ -502,7 +550,7 @@ def build_app(service: HighlightService | None = None) -> gr.Blocks:
     def make_cut(
         video_id: str | None, prompt: str, max_duration: float, session: dict[str, Any]
     ) -> Iterator[tuple[Any, ...]]:
-        if not video_id or not prompt.strip():
+        if not video_by_id(video_id) or not prompt.strip():
             values = [gr.skip() for _ in range(12)]
             values[7] = _notice("Choose a source and tell the editor what to look for.", error=True)
             yield tuple(values)
@@ -515,10 +563,11 @@ def build_app(service: HighlightService | None = None) -> gr.Blocks:
         )
 
     def revise(instruction: str, session: dict[str, Any]) -> Iterator[tuple[Any, ...]]:
-        edit_id = session.get("edit_id")
-        if not edit_id:
+        try:
+            edit_id, _ = session_edit(session)
+        except Exception as error:
             values = [gr.skip() for _ in range(12)]
-            values[7] = _notice("Make a cut before revising it.", error=True)
+            values[7] = _notice(_error_message(error), error=True)
             yield tuple(values)
             return
         yield from job_updates(
@@ -529,33 +578,45 @@ def build_app(service: HighlightService | None = None) -> gr.Blocks:
     def pro_cut(
         video_id: str | None, max_duration: float, session: dict[str, Any]
     ) -> Iterator[tuple[Any, ...]]:
-        for values in make_cut(video_id, PRO_BRIEF, max_duration, session):
-            yield (PRO_BRIEF, *values)
+        for values in make_cut(video_id, first_brief, max_duration, session):
+            yield (first_brief, *values)
 
     def roast_cut(
         video_id: str | None, max_duration: float, session: dict[str, Any]
     ) -> Iterator[tuple[Any, ...]]:
-        for values in make_cut(video_id, ROAST_BRIEF, max_duration, session):
-            yield (ROAST_BRIEF, *values)
+        for values in make_cut(video_id, second_brief, max_duration, session):
+            yield (second_brief, *values)
 
     def undo(session: dict[str, Any]) -> Iterator[tuple[Any, ...]]:
-        edit_id = session.get("edit_id")
-        if not edit_id:
+        try:
+            edit_id, _ = session_edit(session)
+        except Exception as error:
+            values = [gr.skip() for _ in range(12)]
+            values[7] = _notice(_error_message(error), error=True)
+            yield tuple(values)
             return
         yield from job_updates(lambda progress: service.undo_edit(edit_id), session, restored=True)
 
+    def session_edit(session: dict[str, Any]) -> tuple[str, Any]:
+        video = video_by_id(session.get("video_id"))
+        if video is None:
+            raise ValueError("Choose an available source and make a new cut before continuing.")
+        edit_id = session.get("edit_id")
+        if not edit_id:
+            raise ValueError("Make a cut before revising or inspecting it.")
+        result = service.get_result(edit_id)
+        if str(_get(_get(result, "edit_plan"), "video_id")) != str(_get(video, "id")):
+            raise ValueError(
+                "This edit belongs to another recording. Make a new cut from the selected source."
+            )
+        return edit_id, result
+
     def preview(session: dict[str, Any], event: gr.SelectData) -> tuple[Any, str]:
         try:
-            edit_id = session.get("edit_id")
-            if not edit_id:
-                return (
-                    gr.skip(),
-                    '<p class="ha-hint">Make a cut to inspect the original moments.</p>',
-                )
+            edit_id, result = session_edit(session)
             index = event.index[0] if isinstance(event.index, (tuple, list)) else event.index
             index = int(index)
             path = service.preview_moment(edit_id, index)
-            result = service.get_result(edit_id)
             window = _get(_get(result, "edit_plan"), "windows")[index]
             start, end = (
                 float(_get(window, "start_seconds", 0)),
@@ -577,15 +638,21 @@ def build_app(service: HighlightService | None = None) -> gr.Blocks:
         )
         gr.HTML(
             '<div class="ha-hero"><div><div class="ha-eyebrow">ONE SESSION. TWO STORIES.</div>'
-            "<h1>Your footage.<br>Your director’s cut.</h1></div>"
-            "<p>Tell the editor what to find.<br>See the moments. Make your cut.</p></div>"
+            + (
+                "<h1>Your footage.<br>Your director’s cut.</h1></div>"
+                if offline
+                else "<h1>One city.<br>Different stories.</h1></div>"
+            )
+            + "<p>Tell the editor what to find.<br>See the moments. Make your cut.</p></div>"
         )
         gr.HTML(_provenance(status))
 
         with gr.Row(equal_height=False):
             with gr.Column(scale=4, min_width=300, elem_classes=["ha-side"]):
                 with gr.Group(elem_classes=["ha-panel", "ha-stack"]):
-                    gr.HTML(_section("01", "Choose your footage"))
+                    gr.HTML(
+                        _section("01", "Choose your footage" if offline else "Explore SF Streets")
+                    )
                     sources = gr.Dropdown(
                         choices=[
                             (str(_get(item, "label", "Untitled source")), str(_get(item, "id")))
@@ -603,52 +670,95 @@ def build_app(service: HighlightService | None = None) -> gr.Blocks:
                             interactive=False,
                             elem_id="ha-original-source",
                         )
-                    with gr.Accordion("Add a recording", open=not bool(first)) as add_recording:
-                        upload = gr.File(label="Video file", file_types=["video"], type="filepath")
-                        source_label = gr.Textbox(
-                            label="Recording name",
-                            placeholder="Saturday stunt session",
-                            max_lines=1,
-                        )
-                        existing_source = gr.Textbox(
-                            label="Existing VAST source (optional)",
-                            placeholder="Exact original_video value from the index",
-                            max_lines=1,
-                        )
-                        register = gr.Button("Add recording", elem_classes=["ha-secondary"])
-                    with gr.Row():
-                        ingest = gr.Button("Index source", size="sm", elem_classes=["ha-secondary"])
-                        refresh = gr.Button(
-                            "Refresh status", size="sm", elem_classes=["ha-secondary"]
-                        )
-                    if status.get("mode") == "offline_sample":
+                    if offline:
+                        with gr.Accordion("Add a recording", open=not bool(first)) as add_recording:
+                            upload = gr.File(
+                                label="Video file", file_types=["video"], type="filepath"
+                            )
+                            source_label = gr.Textbox(
+                                label="Recording name",
+                                placeholder="Saturday stunt session",
+                                max_lines=1,
+                            )
+                            existing_source = gr.Textbox(
+                                label="Existing VAST source (optional)",
+                                placeholder="Exact original_video value from the index",
+                                max_lines=1,
+                            )
+                            register = gr.Button("Add recording", elem_classes=["ha-secondary"])
+                        with gr.Row():
+                            ingest = gr.Button(
+                                "Index source", size="sm", elem_classes=["ha-secondary"]
+                            )
+                            refresh = gr.Button(
+                                "Refresh status", size="sm", elem_classes=["ha-secondary"]
+                            )
                         sample = gr.Button(
                             "Create synthetic sample", size="sm", elem_classes=["ha-secondary"]
                         )
                     else:
-                        sample = None
+                        with gr.Accordion(
+                            "Supplied SF Streets dataset", open=not bool(first)
+                        ) as add_recording:
+                            gr.HTML(
+                                '<p class="ha-hint">Explore the supplied street camera footage. '
+                                "Choose a recording to use its original video and indexed captions.</p>"
+                            )
+                            browse = gr.Button("Browse SF Streets", elem_classes=["ha-secondary"])
+                            dataset_sources = gr.Dropdown(
+                                choices=[], value=None, label="Dataset recording", interactive=True
+                            )
+                            use_dataset = gr.Button(
+                                "Use dataset video",
+                                interactive=False,
+                                elem_classes=["ha-secondary"],
+                            )
                     source_notice = gr.HTML(
-                        '<p class="ha-hint">Index once. Make different cuts from the same footage.</p>'
+                        '<p class="ha-hint">'
+                        + (
+                            "Index once. Make different cuts from the same footage."
+                            if offline
+                            else "Browse SF Streets, choose a source, then make different cuts from the same city footage."
+                        )
+                        + "</p>"
                     )
 
                 with gr.Group(elem_classes=["ha-panel", "ha-stack"]):
                     gr.HTML(_section("02", "Give it a direction"))
                     with gr.Group(elem_classes=["ha-brief"]):
                         gr.HTML(
-                            '<div class="ha-brief-copy"><div class="ha-small">THE HIGHLIGHT REEL</div>'
-                            "<p>Clean landings. Still upright. Keep driving.</p></div>"
+                            '<div class="ha-brief-copy"><div class="ha-small">'
+                            + ("THE HIGHLIGHT REEL" if offline else "PEOPLE ON THE MOVE")
+                            + "</div><p>"
+                            + (
+                                "Clean landings. Still upright. Keep driving."
+                                if offline
+                                else "Pedestrians crossing, cyclists passing, and people on the street."
+                            )
+                            + "</p></div>"
                         )
-                        pro = gr.Button("Make me look like a pro.  ↗")
+                        pro = gr.Button(first_brief + "  ↗")
                     with gr.Group(elem_classes=["ha-brief"]):
                         gr.HTML(
-                            '<div class="ha-brief-copy"><div class="ha-small">THE HONEST VERSION</div>'
-                            "<p>Hard impacts. Rollovers. Plans gone wrong.</p></div>"
+                            '<div class="ha-brief-copy"><div class="ha-small">'
+                            + ("THE HONEST VERSION" if offline else "THE TRAFFIC CUT")
+                            + "</div><p>"
+                            + (
+                                "Hard impacts. Rollovers. Plans gone wrong."
+                                if offline
+                                else "Buses, passing cars, and traffic moving through the city."
+                            )
+                            + "</p></div>"
                         )
-                        roast = gr.Button("Now roast my driving.  ↗")
+                        roast = gr.Button(second_brief + "  ↗")
                     prompt = gr.Textbox(
                         label="Or write your own brief",
                         lines=2,
-                        placeholder="Find the hardest crashes and save the biggest for last.",
+                        placeholder=(
+                            "Find the hardest crashes and save the biggest for last."
+                            if offline
+                            else "Find pedestrians crossing and busy intersections."
+                        ),
                     )
                     budget = gr.Slider(
                         minimum=10,
@@ -692,7 +802,7 @@ def build_app(service: HighlightService | None = None) -> gr.Blocks:
                     with gr.Group(visible=False) as revision:
                         with gr.Accordion("One more edit…", open=False):
                             revision_prompt = gr.Textbox(
-                                value=REVISION,
+                                value=REVISION if offline else STREET_REVISION,
                                 label="Revision",
                                 lines=2,
                                 info="Remove a numbered clip and reorder by its existing score.",
@@ -762,21 +872,33 @@ def build_app(service: HighlightService | None = None) -> gr.Blocks:
             outputs=[source_meta, add_recording, original_player, *run_outputs],
             **event_options,
         )
-        register.click(
-            register_source,
-            [upload, source_label, existing_source],
-            [sources, source_meta, source_notice],
-            **event_options,
-        )
-        ingest.click(index_source, [sources], [source_meta, source_notice], **event_options)
-        refresh.click(
-            lambda video_id: index_source(video_id, refresh=True),
-            [sources],
-            [source_meta, source_notice],
-            **event_options,
-        )
-        if sample is not None:
+        if offline:
+            register.click(
+                register_source,
+                [upload, source_label, existing_source],
+                [sources, source_meta, source_notice],
+                **event_options,
+            )
+            ingest.click(index_source, [sources], [source_meta, source_notice], **event_options)
+            refresh.click(
+                lambda video_id: index_source(video_id, refresh=True),
+                [sources],
+                [source_meta, source_notice],
+                **event_options,
+            )
             sample.click(add_sample, outputs=[sources, source_meta, source_notice], **event_options)
+        else:
+            browse.click(
+                browse_dataset,
+                outputs=[dataset_sources, use_dataset, source_notice],
+                **event_options,
+            )
+            use_dataset.click(
+                import_dataset_source,
+                [dataset_sources],
+                [sources, source_meta, source_notice],
+                **event_options,
+            )
         generate.click(make_cut, [sources, prompt, budget, session], run_outputs, **event_options)
         pro.click(pro_cut, [sources, budget, session], [prompt, *run_outputs], **event_options)
         roast.click(roast_cut, [sources, budget, session], [prompt, *run_outputs], **event_options)
