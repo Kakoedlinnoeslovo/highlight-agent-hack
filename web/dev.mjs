@@ -8,7 +8,7 @@ import profile from './api/profile.mjs';
 const root = fileURLToPath(new URL('./public/', import.meta.url));
 const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css',
   '.js': 'text/javascript', '.json': 'application/json', '.mp4': 'video/mp4',
-  '.svg': 'image/svg+xml' };
+  '.svg': 'image/svg+xml', '.jpg': 'image/jpeg' };
 
 createServer(async (request, response) => {
   try {
